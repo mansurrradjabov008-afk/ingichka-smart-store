@@ -1200,6 +1200,23 @@ async def start_web_server(port: int = 8080):
     await site.start()
     logger.info(f"Health check web server is listening on port {port} (Render 24/7 Free Mode)")
 
+async def self_ping_task():
+    render_url = os.getenv("RENDER_EXTERNAL_URL")
+    if not render_url:
+        return
+    health_url = f"{render_url.rstrip('/')}/health"
+    logger.info(f"Render 24/7 self-pinger faollashtirildi: {health_url}")
+    await asyncio.sleep(60)
+    import aiohttp
+    async with aiohttp.ClientSession() as session:
+        while True:
+            try:
+                async with session.get(health_url, timeout=10) as resp:
+                    pass
+            except Exception:
+                pass
+            await asyncio.sleep(600)  # Har 10 daqiqada o'zini uyg'otib turadi
+
 async def main():
     init_db()
     logger.info("Ingichka Baraka Savdo Markazi AI boti ishga tushmoqda...")
@@ -1210,6 +1227,7 @@ async def main():
     if port_env:
         try:
             await start_web_server(int(port_env))
+            asyncio.create_task(self_ping_task())
         except Exception as e:
             logger.error(f"Failed to start web server on port {port_env}: {e}")
 
