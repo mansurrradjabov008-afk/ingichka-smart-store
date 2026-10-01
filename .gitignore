@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+*.log
+media/
+*.ogg
+*.mp3
+test_*.mp3
+test_*.ogg
+tests/__pycache__/
+.bot_supervisor.pid
+logs/
+scratch/
+reports/*.xlsx

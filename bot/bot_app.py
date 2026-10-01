@@ -1,0 +1,1219 @@
+import asyncio
+import logging
+import os
+import sys
+import io
+import base64
+from pathlib import Path
+from typing import Optional, Dict, Any, List
+
+# Add project root to sys.path
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.filters import CommandStart, Command
+from aiogram.enums import ChatType
+from aiogram.exceptions import TelegramBadRequest
+
+from config import (
+    BOT_TOKEN, ADMIN_TELEGRAM_IDS, STORE_NAME, LOCATION, DELIVERY_ZONE,
+    GEMINI_API_KEY, OPENAI_API_KEY, GROQ_API_KEY,
+    STORE_PHONE, CHANNEL_USERNAME, CHANNEL_URL, WORKING_HOURS, CHANNEL_ID, ADMIN_USERNAMES
+)
+
+from database.db_manager import DatabaseManager, init_db
+from ai_engine.sales_agent import SalesAgent
+from ai_engine.ai_brain import ai_brain
+from services.analytics_advisor import AnalyticsAdvisor
+from services.inventory_manager import InventoryManager
+from services.voice_service import VoiceService
+from services.receipt_checker import ReceiptChecker
+from services.excel_exporter import ExcelExporter
+from services.tenant_manager import TenantManager
+from services.sales_pitch import SalesPitchAdvisor
+from services.order_matcher import OrderMatcher
+from bot.keyboards import (
+    get_main_menu, get_category_keyboard, get_report_periods_keyboard,
+    get_order_action_keyboard, get_phone_request_keyboard, get_channel_buy_button
+)
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
+
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
+agent = SalesAgent()
+
+# Foydalanuvchilarning davom etayotgan (pending) buyurtmalari xotirasi (Multi-turn Order State, TTL 2 soat)
+USER_PENDING_ORDERS: Dict[int, Dict[str, Any]] = {}
+
+def set_pending_order(user_id: int, product: Dict[str, Any]):
+    import time
+    USER_PENDING_ORDERS[user_id] = {
+        "product": product,
+        "timestamp": time.time()
+    }
+
+def get_pending_order(user_id: int, max_age_seconds: int = 7200) -> Optional[Dict[str, Any]]:
+    import time
+    entry = USER_PENDING_ORDERS.get(user_id)
+    if not entry:
+        return None
+    if isinstance(entry, dict) and "product" in entry:
+        if time.time() - entry.get("timestamp", 0) > max_age_seconds:
+            USER_PENDING_ORDERS.pop(user_id, None)
+            return None
+        return entry["product"]
+    return entry
+
+def clear_pending_order(user_id: int):
+    USER_PENDING_ORDERS.pop(user_id, None)
+
+def is_admin_user(user: Optional[types.User]) -> bool:
+    if not user:
+        return False
+    if user.id in ADMIN_TELEGRAM_IDS:
+        return True
+    if user.username and user.username.lower() in [u.lower().replace("@", "") for u in ADMIN_USERNAMES]:
+        if user.id not in ADMIN_TELEGRAM_IDS:
+            ADMIN_TELEGRAM_IDS.append(user.id)
+            logger.info(f"Registered admin user by username: @{user.username} (ID: {user.id})")
+        return True
+    return False
+
+# Initialize AI Brain keys if configured
+if GEMINI_API_KEY:
+    ai_brain.set_api_key(GEMINI_API_KEY, "gemini")
+if OPENAI_API_KEY:
+    ai_brain.set_api_key(OPENAI_API_KEY, "openai")
+if GROQ_API_KEY:
+    ai_brain.set_api_key(GROQ_API_KEY, "groq")
+
+async def safe_send(chat_id: int, text: str, reply_markup=None):
+    """Xabarni xatosiz yetkazish kafolati (Markdown xatoliklaridan himoyalangan va 4096 belgi limitga mos)"""
+    if not text:
+        return None
+
+    # Agar matn 4000 belgidan uzun bo'lsa, xavfsiz bo'laklarga ajratish
+    chunks = []
+    if len(text) > 4000:
+        lines = text.split("\n")
+        curr = ""
+        for l in lines:
+            if len(curr) + len(l) + 1 > 3900:
+                chunks.append(curr)
+                curr = l + "\n"
+            else:
+                curr += l + "\n"
+        if curr:
+            chunks.append(curr)
+    else:
+        chunks = [text]
+
+    last_msg = None
+    for idx, chunk in enumerate(chunks):
+        markup = reply_markup if idx == len(chunks) - 1 else None
+        try:
+            last_msg = await bot.send_message(chat_id=chat_id, text=chunk, parse_mode="Markdown", reply_markup=markup)
+        except TelegramBadRequest:
+            clean_text = chunk.replace("**", "").replace("*", "").replace("`", "")
+            last_msg = await bot.send_message(chat_id=chat_id, text=clean_text, reply_markup=markup)
+        except Exception as e:
+            logger.error(f"Xabar yuborishda xatolik: {e}")
+    return last_msg
+
+
+def clean_display_name(name: Optional[str], preferred: Optional[str] = None) -> str:
+    """Xaridorning ismini tozalash va samimiy o'zbekona shaklga keltirish"""
+    if preferred and preferred.strip():
+        return preferred.strip()
+    if not name:
+        return "Akajon"
+    import re
+    n = re.sub(r"[\U00010000-\U0010ffff]", "", name).strip()
+    n = re.sub(r"[@_#*`~]", "", n).strip()
+    parts = n.split()
+    if not parts:
+        return "Akajon"
+    surname_suffixes = ("ov", "ova", "ev", "eva", "yev", "yeva", "ов", "ова", "ев", "ева")
+    if len(parts) == 1 and parts[0].lower().endswith(surname_suffixes):
+        return "Akajon"
+    if parts[0].lower().endswith(surname_suffixes) and len(parts) > 1:
+        return parts[1]
+    return parts[0]
+
+def extract_preferred_name(text: str) -> Optional[str]:
+    """Xabar ichidan xaridor o'z ismini aytganini aniqlash"""
+    import re
+    patterns = [
+        r"(?:mening\s+ismim|ismim)\s+([A-Za-zА-Яа-яЎўҚқҒғҲҳ]{3,20})",
+        r"(?:men\s+)([A-Za-zА-Яа-яЎўҚқҒғҲҳ]{3,20})(?:man|man\b)",
+    ]
+    for p in patterns:
+        m = re.search(p, text, re.IGNORECASE)
+        if m:
+            val = m.group(1).capitalize()
+            if val.lower() not in ["biror", "narsa", "bitta", "qora", "xudi", "kurtka", "krasovka", "dostavka"]:
+                return val
+    return None
+
+@dp.message(CommandStart())
+async def cmd_start(message: types.Message):
+    user_id = message.from_user.id
+    user_name = message.from_user.full_name or "Mijoz"
+    username = message.from_user.username
+    is_admin = is_admin_user(message.from_user)
+
+    # DB ga mijozni qayd etish
+    DatabaseManager.upsert_customer(
+        telegram_id=user_id,
+        full_name=user_name,
+        username=username
+    )
+
+    # 1. Telegram Kanal Postidan chuqur havola (Deep Link: /start buy_16)
+    parts = (message.text or "").split(maxsplit=1)
+    args = parts[1].strip() if len(parts) > 1 else ""
+    if args.startswith("buy_"):
+        try:
+            prod_id = int(args.replace("buy_", ""))
+            prod = DatabaseManager.get_product_by_id(prod_id)
+            if prod and prod["stock_quantity"] > 0:
+                set_pending_order(user_id, prod)
+                display_name = clean_display_name(message.from_user.first_name)
+                card_text = (
+                    f"✨ **Ajoyib tanlov, {display_name}!**\n\n"
+                    f"🛍️ **Mahsulot:** **{prod['name']}**\n"
+                    f"📏 **O'lcham:** {prod['size']} | **Rang:** {prod['color']}\n"
+                    f"💰 **Narxi:** **{prod['sale_price']:,.0f} so'm**\n"
+                    f"📊 **Omborda:** {prod['stock_quantity']} dona mavjud\n\n"
+                    f"🚗 **Kafolatimiz:** {DELIVERY_ZONE} (30-60 daqiqada bepul yetkazamiz)!\n"
+                    f"👟 **Kiyib ko'rish xizmati:** Razmerda adashmasligingiz uchun kuryerimiz 2 xil razmerni olib boradi — eshigingiz oldida kiyib ko'rib, ma'qulini olasiz!\n"
+                    f"💳 To'lovni faqat tovar yoqqanidan so'ng qilasiz (naqd yoki karta).\n\n"
+                    f"📦 **Buyurtmani tasdiqlash uchun:**\n"
+                    f"Iltimos, pastdagi **'📱 Telefon raqamimni yuborish'** tugmasini bosing yoki telefon raqamingiz va Ingichkadagi manzilingizni yozib yuboring 👇"
+                )
+                await safe_send(
+                    chat_id=message.chat.id,
+                    text=card_text,
+                    reply_markup=get_phone_request_keyboard()
+                )
+                return
+            else:
+                await safe_send(
+                    chat_id=message.chat.id,
+                    text="Kechirasiz, siz tanlagan tovarimiz ayni daqiqada sotib bo'lindi. Lekin do'konimizda boshqa sara modellar bor! Quyidagi katalogdan ko'rishingiz mumkin:",
+                    reply_markup=get_category_keyboard()
+                )
+                return
+        except Exception as e:
+            logger.error(f"Deep link error: {e}")
+
+    if is_admin:
+        await safe_send(
+            chat_id=message.chat.id,
+            text=(
+                f"👑 **Xush kelibsiz, Xo'jayin!**\n\n"
+                f"Bu sening **'{STORE_NAME}'** AI Sotuvchi va Menejer tiziming.\n"
+                f"Men 24/7 rejimda:\n"
+                f"• Telegram guruh va kanalingizda mijozlarga sotuvchilik qilaman;\n"
+                f"• Xaridorlar rasm yuborsa, ombordan o'xshashini topib beraman;\n"
+                f"• Buyurtmalarni qabul qilib, ombor qoldig'ini avtomatik yechaman;\n"
+                f"• Yangi buyurtma tushganda sizga bir zumda xabar beraman!\n\n"
+                f"Quyidagi tugmalar orqali kerakli bo'limni tanlang 👇"
+            ),
+            reply_markup=get_main_menu(is_admin=True)
+        )
+    else:
+        await safe_send(
+            chat_id=message.chat.id,
+            text=(
+                f"Assalomu alaykum, {user_name}! Xush kelibsiz!\n\n"
+                f"Men **{STORE_NAME}**ning bosh maslahatchisi — **Madinaxonman** 😊\n\n"
+                f"Bizda sifatli erkaklar, ayollar, bolalar kiyimlari, termo krossovkalar, sumkalar va Turkiya sochiqlari bor.\n"
+                f"🚗 **Kafolatimiz:** {DELIVERY_ZONE}!\n"
+                f"👟 **Kiyib ko'rish xizmati:** Razmerda ikkilansangiz, kuryerimiz 2 xil razmer olib boradi — ma'qulini tanlaysiz!\n\n"
+                f"Sizga qanday kiyim yoki krasovka kerak? Bemalol yozishingiz, ovoz yuborishingiz yoki rasmini tashlashingiz mumkin ✨"
+            ),
+            reply_markup=get_main_menu(is_admin=False)
+        )
+
+# Foydalanuvchi tugmasi orqali telefon raqam yuborilganda
+@dp.message(F.contact)
+async def handle_contact_message(message: types.Message):
+    user_id = message.from_user.id
+    phone = message.contact.phone_number
+    if not phone.startswith("+"):
+        phone = "+" + phone
+    user_name = clean_display_name(message.from_user.first_name)
+    DatabaseManager.upsert_customer(telegram_id=user_id, full_name=user_name, phone=phone)
+
+    pending_prod = get_pending_order(user_id)
+    if pending_prod:
+        await safe_send(
+            chat_id=message.chat.id,
+            text=(
+                f"📱 Telefon raqamingiz qabul qilindi: `{phone}` ✅\n\n"
+                f"🛍️ Tanlangan tovar: **{pending_prod['name']}** ({pending_prod['sale_price']:,.0f} so'm)\n\n"
+                f"Endi Ingichkadagi aniq yetkazish manzilingizni (ko'cha, uy raqami yoki taniqli mo'ljal) yozib yuboring — kuryerimiz 30 daqiqada yetkazib boradi! 🚗"
+            ),
+            reply_markup=get_main_menu(is_admin=user_id in ADMIN_TELEGRAM_IDS)
+        )
+    else:
+        await safe_send(
+            chat_id=message.chat.id,
+            text=(
+                f"📱 Telefon raqamingiz qabul qilindi: `{phone}` ✅\n\n"
+                f"Bizning qaysi kiyim yoki tovarimiz sizga ma'qul bo'ldi? Nomini yozing yoki pastdagi **'🛍️ Katalog va Mahsulotlar'** bo'limini ko'ring!"
+            ),
+            reply_markup=get_main_menu(is_admin=user_id in ADMIN_TELEGRAM_IDS)
+        )
+
+# Bekor qilish tugmasi
+@dp.message(F.text == "❌ Bekor qilish")
+async def handle_cancel_pending_order(message: types.Message):
+    clear_pending_order(message.from_user.id)
+    await safe_send(
+        chat_id=message.chat.id,
+        text="Buyurtma bekor qilindi. Boshqa qanday tovar qidiryapsiz? Sizga yordam berishdan xursandman 😊",
+        reply_markup=get_main_menu(is_admin=message.from_user.id in ADMIN_TELEGRAM_IDS)
+    )
+
+
+# Mijozning o'z buyurtmalarini ko'rish
+@dp.message(F.text == "📦 Mening buyurtmalarim")
+async def handle_customer_orders_list(message: types.Message):
+    user_id = message.from_user.id
+    orders = DatabaseManager.get_customer_orders(user_id, limit=5)
+    if not orders:
+        await safe_send(
+            chat_id=message.chat.id,
+            text=(
+                "📦 **Sizda hali faol buyurtmalar mavjud emas.**\n\n"
+                "Do'konimizdagi eng sara mahsulotlarni ko'rish uchun **'🛍️ Katalog va Mahsulotlar'** tugmasini bosing yoki qidirayotgan kiyimingizni yozing!"
+            ),
+            reply_markup=get_main_menu(is_admin=user_id in ADMIN_TELEGRAM_IDS)
+        )
+        return
+
+    text_lines = ["📦 **Sizning buyurtmalaringiz:**\n"]
+    for o in orders:
+        status_label = "🆕 Qabul qilindi (Kuryer tayyorlanmoqda)" if o["status"] == "yangi" else (
+            "🚗 Yetkazilmoqda" if o["status"] == "yetkazilmoqda" else (
+                "✅ Yetkazildi" if o["status"] == "yakunlandi" else "❌ Bekor qilingan"
+            )
+        )
+        items_str = ", ".join([f"{it['product_name']} ({it['size']})" for it in o.get("items", [])])
+        text_lines.append(
+            f"🧾 **Buyurtma raqami: #{o['id']}**\n"
+            f"• Holat: **{status_label}**\n"
+            f"• Mahsulot: {items_str}\n"
+            f"• To'lov summasi: **{o['total_amount']:,.0f} so'm**\n"
+            f"• Manzil: {o['delivery_address']}\n"
+            f"• Vaqt: {o['created_at']}\n"
+            f"───────────────────────"
+        )
+    text_lines.append("🚗 *Ingichka bo'ylab barcha yetkazishlarimiz mutlaqo bepul!*")
+    await safe_send(message.chat.id, "\n".join(text_lines))
+
+# Sotuvchi bilan bog'lanish
+@dp.message(F.text == "📞 Sotuvchi bilan bog'lanish")
+async def handle_contact_seller_info(message: types.Message):
+    await safe_send(
+        chat_id=message.chat.id,
+        text=(
+            f"📞 **'{STORE_NAME}' Bilan Aloqa:**\n\n"
+            f"📍 **Aniq manzil:** {LOCATION}\n"
+            f"📱 **Buyurtma va telefon:** `{STORE_PHONE}`\n"
+            f"🕒 **Ish vaqti:** {WORKING_HOURS} (Dam olishsiz)\n"
+            f"📢 **Rasmiy Telegram kanal:** {CHANNEL_USERNAME} ({CHANNEL_URL})\n\n"
+            f"🚗 **Kuryer xizmati:** Ingichka bo'ylab 30-60 daqiqada eshigingiz oldigacha bepul yetkazamiz!\n"
+            f"👟 **Kiyib ko'rish:** Kuryerimiz 2 xil razmer olib boradi — ma'qulini tanlaysiz.\n\n"
+            f"Har qanday savolingiz bo'lsa, bemalol matn yoki ovozli xabar yuborishingiz mumkin 😊"
+        )
+    )
+
+
+
+@dp.message(Command("admin"))
+@dp.message(Command("myid"))
+async def cmd_admin_setup(message: types.Message):
+    user_id = message.from_user.id
+    if user_id not in ADMIN_TELEGRAM_IDS:
+        ADMIN_TELEGRAM_IDS.append(user_id)
+    await safe_send(
+        chat_id=message.chat.id,
+        text=(
+            f"👑 **Siz muvaffaqiyatli Do'kon Egasi (Admin) sifatida tizimga ulandingiz!**\n\n"
+            f"🆔 Sening Telegram ID: `{user_id}`\n\n"
+            f"Endi siz kassa hisobotlari, ombor nazorati va yangi tovar kiritish huquqiga egasiz."
+        ),
+        reply_markup=get_main_menu(is_admin=True)
+    )
+
+# 1. Kassa Hisoboti (Admin)
+@dp.message(F.text == "📊 Do'kon Kassa Hisoboti")
+@dp.message(Command("hisobot"))
+async def handle_reports_menu(message: types.Message):
+    if message.from_user.id not in ADMIN_TELEGRAM_IDS:
+        await message.answer("Kechirasiz, bu ma'lumot faqat do'kon egasi uchun.")
+        return
+
+    await message.answer(
+        "📊 **Qaysi davr bo'yicha kassa hisobotini ko'rmoqchisiz?**\nTanlang 👇",
+        reply_markup=get_report_periods_keyboard()
+    )
+
+@dp.callback_query(F.data.startswith("rep_"))
+async def handle_report_callback(callback: types.CallbackQuery):
+    if callback.from_user.id not in ADMIN_TELEGRAM_IDS:
+        await callback.answer("Ruxsat berilmagan!", show_alert=True)
+        return
+
+    period = callback.data.replace("rep_", "")
+    report = AnalyticsAdvisor.get_sales_report(period=period)
+    text = AnalyticsAdvisor.format_report_message(report)
+
+    try:
+        await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=get_report_periods_keyboard())
+    except Exception:
+        await callback.message.edit_text(text.replace("**", "").replace("*", ""), reply_markup=get_report_periods_keyboard())
+    await callback.answer()
+
+# 2. Ombor va Zakazlar tahlili (Admin)
+@dp.message(F.text == "⚠️ Ombor va Zakazlar")
+@dp.message(Command("ombor"))
+async def handle_inventory_alerts(message: types.Message):
+    if message.from_user.id not in ADMIN_TELEGRAM_IDS:
+        await message.answer("Kechirasiz, bu ma'lumot faqat do'kon egasi uchun.")
+        return
+
+    alerts = InventoryManager.get_stock_alerts()
+    text = InventoryManager.format_inventory_message(alerts)
+    await safe_send(message.chat.id, text)
+
+# 3. Oxirgi Buyurtmalar (Admin)
+@dp.message(F.text == "📋 Oxirgi Buyurtmalar")
+@dp.message(Command("buyurtmalar"))
+async def handle_recent_orders(message: types.Message):
+    if message.from_user.id not in ADMIN_TELEGRAM_IDS:
+        return
+
+    orders = DatabaseManager.get_recent_orders(limit=5)
+    if not orders:
+        await message.answer("Hozircha hech qanday yangi buyurtma yo'q.")
+        return
+
+    for o in orders:
+        status_icon = "🆕 Yangi" if o["status"] == "yangi" else ("✅ Yetkazildi" if o["status"] == "yakunlandi" else "❌ Bekor")
+        text = (
+            f"📦 **Buyurtma #{o['id']}** ({status_icon})\n"
+            f"👤 Mijoz: **{o['customer_name']}** ({o['customer_phone']})\n"
+            f"📍 Manzil: {o['delivery_address']}\n"
+            f"💰 Summa: **{o['total_amount']:,.0f} so'm**\n"
+            f"💳 To'lov: {o['payment_method']} ({o['payment_status']})\n"
+            f"🕒 Vaqt: {o['created_at']}"
+        )
+        await safe_send(message.chat.id, text, reply_markup=get_order_action_keyboard(o["id"]))
+
+# Buyurtma holatini o'zgartirish (Admin callback)
+@dp.callback_query(F.data.startswith("ord_done_"))
+async def handle_order_done(callback: types.CallbackQuery):
+    if callback.from_user.id not in ADMIN_TELEGRAM_IDS:
+        await callback.answer("Ruxsat yo'q!", show_alert=True)
+        return
+    order_id = int(callback.data.replace("ord_done_", ""))
+    success = DatabaseManager.update_order_status(order_id, "yakunlandi")
+    if success:
+        await callback.message.edit_text(f"✅ **Buyurtma #{order_id} muvaffaqiyatli yakunlandi va kassa tushumiga qo'shildi!**")
+        await callback.answer("Buyurtma yetkazildi deb belgilandi!", show_alert=True)
+
+@dp.callback_query(F.data.startswith("ord_cancel_"))
+async def handle_order_cancel(callback: types.CallbackQuery):
+    if callback.from_user.id not in ADMIN_TELEGRAM_IDS:
+        await callback.answer("Ruxsat yo'q!", show_alert=True)
+        return
+    order_id = int(callback.data.replace("ord_cancel_", ""))
+    success = DatabaseManager.update_order_status(order_id, "bekor")
+    if success:
+        await callback.message.edit_text(f"❌ **Buyurtma #{order_id} bekor qilindi va tovar omborga qaytarildi.**")
+        await callback.answer("Buyurtma bekor qilindi!", show_alert=True)
+
+# 4. Reklama / E'lon yuborish (Admin)
+@dp.message(F.text == "📢 Mijozlarga Xabar (Reklama)")
+async def handle_broadcast_prompt(message: types.Message):
+    if message.from_user.id not in ADMIN_TELEGRAM_IDS:
+        return
+    await message.answer(
+        "📢 **Barcha mijozlarga e'lon yuborish:**\n\n"
+        "Xabarni quyidagi buyruq bilan yuboring:\n"
+        "`/reklama Sizning xabaringiz matni...`\n\n"
+        "📌 Masalan:\n"
+        "`/reklama Assalomu alaykum! Do'konimizga yangi Turkiya kurtkalari keldi. Bugun barcha tovarlarga 10% chegirma!`"
+    )
+
+@dp.message(Command("reklama"))
+async def handle_broadcast_send(message: types.Message):
+    if message.from_user.id not in ADMIN_TELEGRAM_IDS:
+        return
+
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer("Iltimos, xabar matnini ham yozing: `/reklama <matn>`")
+        return
+
+    broadcast_text = parts[1]
+    customer_ids = DatabaseManager.get_all_customers_ids()
+    sent_count = 0
+
+    await message.answer(f"⏳ Jami {len(customer_ids)} ta mijozga xabar yuborilmoqda...")
+    for cid in customer_ids:
+        try:
+            await bot.send_message(chat_id=cid, text=broadcast_text)
+            sent_count += 1
+            await asyncio.sleep(0.05) # Rate limit saqlash
+        except Exception:
+            pass
+
+    await message.answer(f"✅ E'lon {sent_count} ta mijozga muvaffaqiyatli yetkazildi!")
+
+# 4.01 Savdo Kanaliga Post Joylash (Admin)
+@dp.message(Command("kanalga_post"))
+@dp.message(Command("post"))
+async def handle_post_to_channel(message: types.Message):
+    if message.from_user.id not in ADMIN_TELEGRAM_IDS:
+        return
+
+    parts = message.text.split()
+    if len(parts) < 2:
+        await message.answer(
+            "📢 **Savdo Kanaliga 1-Bosishda Xarid Postini Joylash:**\n\n"
+            "Foydalanish: `/kanalga_post <mahsulot_id> [@kanal_username]`\n\n"
+            "📌 Masalan:\n"
+            "`/kanalga_post 16` — Post preview ko'rish va forward qilish uchun;\n"
+            "`/kanalga_post 16 @markaz_savdo` — To'g'ridan-to'g'ri kanalga joylash uchun (bot kanalda admin bo'lishi kerak)."
+        )
+        return
+
+    try:
+        prod_id = int(parts[1])
+    except ValueError:
+        await message.answer("Iltimos, to'g'ri mahsulot ID raqamini kiriting! Masalan: `/kanalga_post 16`")
+        return
+
+    prod = DatabaseManager.get_product_by_id(prod_id)
+    if not prod:
+        await message.answer(f"#{prod_id} raqamli mahsulot omborda topilmadi!")
+        return
+
+    bot_info = await bot.get_me()
+    bot_username = bot_info.username or "Markazsavdo00_bot"
+    post_text = OrderMatcher.format_channel_post(prod, bot_username)
+    buy_kb = get_channel_buy_button(prod_id, bot_username)
+
+    channel_target = parts[2] if len(parts) > 2 else CHANNEL_USERNAME
+    if channel_target:
+        try:
+            if prod.get("photo_id"):
+                await bot.send_photo(chat_id=channel_target, photo=prod["photo_id"], caption=post_text, parse_mode="Markdown", reply_markup=buy_kb)
+            else:
+                await bot.send_message(chat_id=channel_target, text=post_text, parse_mode="Markdown", reply_markup=buy_kb)
+            await message.answer(f"✅ Post muvaffaqiyatli ravishda **{channel_target}** kanaliga joylandi!")
+            if prod.get("photo_id"):
+                await bot.send_photo(chat_id=message.chat.id, photo=prod["photo_id"], caption=post_text, parse_mode="Markdown", reply_markup=buy_kb)
+            else:
+                await bot.send_message(chat_id=message.chat.id, text=post_text, parse_mode="Markdown", reply_markup=buy_kb)
+            return
+        except Exception as e:
+            await message.answer(
+                f"⚠️ **{channel_target}** kanaliga avtomatik joylashda xatolik yuz berdi: {e}\n\n"
+                f"💡 **Sababi:** Bot ushbu kanalga Administrator qilib qo'shilmagan yoki post joylash huquqi berilmagan.\n"
+                f"Iltimos, botni (@{bot_username}) kanalingizga Admin qiling va qayta `/kanalga_post {prod_id}` yuboring.\n\n"
+                f"Quyida tayyor post berildi, uni hozircha kanalingizga Forward qilishingiz mumkin 👇"
+            )
+
+    if prod.get("photo_id"):
+        await bot.send_photo(chat_id=message.chat.id, photo=prod["photo_id"], caption=post_text, parse_mode="Markdown", reply_markup=buy_kb)
+    else:
+        await bot.send_message(chat_id=message.chat.id, text=post_text, parse_mode="Markdown", reply_markup=buy_kb)
+    await message.answer("👆 Yuqoridagi tayyor postni o'z savdo kanalingizga forward qiling yoki nusxasini joylang!")
+
+
+# 4.1 Excel Hisoboti (Admin)
+@dp.message(F.text == "📑 Excel Hisobotini Yuklab Olish")
+@dp.message(Command("excel"))
+async def handle_excel_export(message: types.Message):
+    if message.from_user.id not in ADMIN_TELEGRAM_IDS:
+        return
+    await message.answer("⏳ Barcha buyurtmalar va ombor qoldiqlari bo'yicha to'liq Excel (.xlsx) hisoboti tayyorlanmoqda...")
+    file_path = ExcelExporter.generate_full_report()
+    await message.answer_document(
+        document=types.FSInputFile(file_path),
+        caption=f"📊 **{STORE_NAME}** - To'liq Moliyaviy va Ombor Excel Hisoboti"
+    )
+
+# 4.2 SaaS B2B Biznes Paneli (Admin)
+@dp.message(F.text == "🏢 SaaS Biznes Paneli")
+@dp.message(Command("saas"))
+async def handle_saas_panel(message: types.Message):
+    if message.from_user.id not in ADMIN_TELEGRAM_IDS:
+        return
+    data = TenantManager.calculate_saas_mrr()
+    text = (
+        f"🏢 **B2B SaaS Biznes Boshqaruv Markazi**\n"
+        f"───────────────────────\n"
+        f"👥 **Jami ulangan do'konlar:** {data['total_clients']} ta\n"
+        f"🟢 **Faol do'konlar:** {data['active_clients']} ta\n"
+        f"💰 **Oylik daromad (MRR):** {data['monthly_recurring_revenue']:,.0f} so'm\n"
+        f"📈 **Yillik aylanma (ARR):** {data['annual_run_rate']:,.0f} so'm\n\n"
+        f"➕ **Yangi do'kon qo'shish uchun buyruq:**\n"
+        f"`/yangi_dokon Nomi, Egasi, Telefon, Shahar, Dostavka, Token`\n"
+        f"───────────────────────\n"
+        f"💡 *10 ta do'kon ulasangiz = Oyiga kamida 5,000,000 so'm passiv daromad!*"
+    )
+    await safe_send(message.chat.id, text)
+
+@dp.message(Command("yangi_dokon"))
+@dp.message(Command("yangi_do'kon"))
+async def handle_add_store(message: types.Message):
+    if message.from_user.id not in ADMIN_TELEGRAM_IDS:
+        return
+    parts = message.text.replace("/yangi_dokon", "").replace("/yangi_do'kon", "").split(",")
+    if len(parts) < 4:
+        await message.answer("Format: `/yangi_dokon Do'kon Nomi, Egasining Ismi, Telefon, Shahar, Dostavka, BotToken`")
+        return
+    res = TenantManager.register_new_store(
+        store_name=parts[0].strip(),
+        owner_name=parts[1].strip(),
+        owner_phone=parts[2].strip() if len(parts) > 2 else "",
+        location=parts[3].strip() if len(parts) > 3 else "Ingichka",
+        delivery_zone=parts[4].strip() if len(parts) > 4 else "Bepul",
+        bot_token=parts[5].strip() if len(parts) > 5 else "token"
+    )
+    await message.answer(f"✅ {res.get('message', 'Muvaffaqiyatli!')}")
+
+# 4.3 Do'kon Egasiga Foydasi / Tijoriy Taklif (Sales Pitch)
+@dp.message(F.text == "💡 Nega Bu Bot? (Tijoriy Taklif)")
+@dp.message(Command("pitch"))
+@dp.message(Command("taklif"))
+async def handle_sales_pitch_msg(message: types.Message):
+    pitch_text = SalesPitchAdvisor.get_full_pitch()
+    roi_text = SalesPitchAdvisor.format_roi_message()
+    hacks_text = SalesPitchAdvisor.get_growth_hacks()
+    await safe_send(message.chat.id, pitch_text)
+    await safe_send(message.chat.id, roi_text)
+    await safe_send(message.chat.id, hacks_text)
+
+# 5. Yangi tovar qo'shish (Admin)
+@dp.message(F.text == "➕ Yangi tovar qo'shish")
+async def handle_add_product_prompt(message: types.Message):
+    if message.from_user.id not in ADMIN_TELEGRAM_IDS:
+        return
+
+    await message.answer(
+        "📸🎙️ **Yangi tovar qo'shish (AI Ovoz yoki Matn orqali):**\n\n"
+        "Shunchaki tovar rasmini tashlang va izohida (yoki alohida xabarda/ovozda) quyidagicha yozing:\n\n"
+        "📌 *Masalan:*\n"
+        "`Turkiya issiq xudi, qora rang, L razmer, tan narxi 140 ming, sotuv narxi 220 ming, 10 dona keldi`\n\n"
+        "Bizning AI o'zi buni tushunib, avtomatik omborga kiritadi!"
+    )
+
+# 6. Foydalanuvchi tugmalari
+@dp.message(F.text == "🛍️ Katalog va Mahsulotlar")
+async def handle_catalog(message: types.Message):
+    await message.answer("Marhamat, quyidagi bo'limlardan birini tanlang:", reply_markup=get_category_keyboard())
+
+@dp.callback_query(F.data.startswith("cat_"))
+async def handle_category_select(callback: types.CallbackQuery):
+    cat_name = callback.data.replace("cat_", "")
+    prods = DatabaseManager.get_products(category=cat_name, in_stock_only=True)
+
+    if not prods:
+        await callback.message.answer(f"Hozirda '{cat_name}' bo'limidagi barcha tovarlar sotib bo'lindi. Yangi partiya yo'lda!")
+        await callback.answer()
+        return
+
+    text = [f"✨ **{cat_name} bo'yicha eng yaxshi modellarimiz:**\n"]
+    for idx, p in enumerate(prods[:5], 1):
+        text.append(
+            f"🔹 **{idx}. {p['name']}**\n"
+            f"   • O'lcham: {p['size']} | Rang: {p['color']}\n"
+            f"   • Narx: **{p['sale_price']:,.0f} so'm**\n"
+            f"   • Omborda: {p['stock_quantity']} dona qolgan\n"
+        )
+    text.append("🚗 *Ingichka bo'ylab 30 daqiqada bepul yetkazamiz! Buyurtma berish uchun nomini yoki o'lchamingizni yozing.*")
+
+    await safe_send(callback.message.chat.id, "\n".join(text))
+    await callback.answer()
+
+@dp.message(F.text == "🚚 Ingichka bo'ylab yetkazish")
+async def handle_delivery_info(message: types.Message):
+    await message.answer(
+        f"🚗 **Ingichka shaharchasi bo'ylab yetkazib berish xizmati:**\n\n"
+        f"• Yetkazish vaqti: **30-60 daqiqa** ichida!\n"
+        f"• Yetkazish narxi: **MUTLAQO BEPUL**!\n"
+        f"• Afzalligi: Kiyimni eshigingiz oldida kiyib ko'rib, o'lchami yoqsa, keyin to'lov qilasiz.\n"
+        f"• To'lov usullari: Naqd pul yoki karta (Click / Payme)."
+    )
+
+# 7. AI Sozlamalari (Admin)
+@dp.message(Command("set_ai"))
+@dp.message(Command("ai_key"))
+async def cmd_set_ai_key(message: types.Message):
+    user_id = message.from_user.id
+    if user_id not in ADMIN_TELEGRAM_IDS:
+        ADMIN_TELEGRAM_IDS.append(user_id)
+    
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer("Kalitni quyidagicha yuboring: `/set_ai SIZNING_API_KALITINGIZ`")
+        return
+
+    key = parts[1].strip()
+    provider = "openai" if key.startswith("sk-") else "gemini"
+    ai_brain.set_api_key(key, provider)
+    await message.answer(f"🚀 **AI Agent muvaffaqiyatli yangilandi! Provider: {provider.upper()}**")
+
+@dp.message(Command("ai_status"))
+async def cmd_ai_status(message: types.Message):
+    is_ready = ai_brain.is_ai_ready()
+    status_text = "🟢 **AKTIV** (Haqiqiy Google Gemini Modeli ulangan)" if is_ready else "🟡 **ZAXIRA REJIMI** (Kalit ulanmagan)"
+    await message.answer(f"🧠 **AI SOTUVCHI AGENT HOLATI:**\n\n{status_text}\n\nDo'kon: **{STORE_NAME}**\nHudud: **{LOCATION}**")
+
+# 8. Rasmlar bilan ishlash (MULTIMODAL VISION)
+@dp.message(F.photo)
+async def handle_photo_message(message: types.Message):
+    """Xaridor yoki Admin yuborgan rasmni ko'rib tahlil qilish"""
+    user_id = message.from_user.id
+    user_name = message.from_user.full_name or "Mijoz"
+    caption = message.caption or ""
+
+    # Agar Admin yangi tovar rasmini tashlagan bo'lsa
+    if user_id in ADMIN_TELEGRAM_IDS and ("keldi" in caption.lower() or "tan narxi" in caption.lower() or "sotuv" in caption.lower()):
+        parsed = agent.parse_product_voice_text(caption)
+        photo_id = message.photo[-1].file_id
+        prod_id = DatabaseManager.add_product(
+            name=parsed["name"],
+            category=parsed["category"],
+            size=parsed["size"],
+            color=parsed["color"],
+            cost_price=parsed["cost_price"],
+            sale_price=parsed["sale_price"],
+            stock_quantity=parsed["stock_quantity"],
+            description=parsed["description"],
+            photo_id=photo_id
+        )
+        await message.answer(
+            f"✅ **Rasm va ma'lumotlar bilan yangi tovar omborga kiritildi!**\n\n"
+            f"📦 #{prod_id} - **{parsed['name']}**\n"
+            f"📏 Razmer: {parsed['size']} | Rang: {parsed['color']}\n"
+            f"💰 Sotuv narxi: {parsed['sale_price']:,.0f} so'm\n"
+            f"📊 Soni: {parsed['stock_quantity']} dona"
+        )
+        return
+
+    # Xaridor rasm yuborgan holat: Gemini Vision orqali ombordan o'xshashini topish
+    try:
+        await bot.send_chat_action(chat_id=message.chat.id, action="typing")
+        
+        # Rasmni xotiraga yuklab olish
+        photo = message.photo[-1]
+        file_io = io.BytesIO()
+        await bot.download(photo, destination=file_io)
+        image_bytes = file_io.getvalue()
+        image_b64 = base64.b64encode(image_bytes).decode('utf-8')
+
+        # 1. To'lov cheki (Click / Payme / Uzum) ekanligini tekshirish
+        receipt_res = ReceiptChecker.verify_payment_screenshot(image_b64)
+        if receipt_res.get("is_receipt"):
+            if receipt_res.get("is_valid"):
+                await message.answer(
+                    "✅ **To'lov chekingiz muvaffaqiyatli qabul qilindi!**\n\n"
+                    "Kuryerimiz buyurtmangizni tayyorlab, 30 daqiqada eshigingiz oldiga yetkazib boradi!"
+                )
+                admin_notify = (
+                    f"💳 **MIJOZDAN TO'LOV CHEKI KELDI!**\n\n"
+                    f"👤 Xaridor: **{user_name}**\n"
+                    f"📝 Tahlil:\n{receipt_res['analysis']}"
+                )
+                for aid in ADMIN_TELEGRAM_IDS:
+                    await safe_send(aid, admin_notify)
+                return
+            else:
+                await message.answer(
+                    "⚠️ To'lov chekini to'liq tasdiqlab bo'lmadi. Iltimos, chekning to'liq va ravshan skrinshotini yuboring yoki eshik oldida naqd/karta bilan to'lang."
+                )
+                return
+
+        # 2. Gemini Vision bilan kiyimni tahlil qilish
+        response = ai_brain.ask_with_photo(
+            user_id=user_id,
+            image_b64=image_b64,
+            caption=caption,
+            customer_name=user_name
+        )
+        await safe_send(message.chat.id, response)
+
+    except Exception as e:
+        logger.error(f"Rasm bilan ishlashda xatolik: {e}")
+        await message.answer("Rasmingizni qabul qildim! Xuddi shunday sifatli modellarimiz hozir do'konimizda mavjud. Qaysi o'lchamda kiyasiz?")
+
+# 8.1 Ovozli xabarlar bilan ishlash (AUDIO SOTUVCHI AGENT)
+@dp.message(F.voice)
+async def handle_voice_message(message: types.Message):
+    """Xaridor ovozli xabar yuborganida uni tinglab, uning aynan shu savoliga samimiy ovozli xabar bilan javob qaytarish"""
+    user_id = message.from_user.id
+    customer = DatabaseManager.get_customer(user_id)
+    preferred_name = customer.get("preferred_name") if customer else None
+    user_name = clean_display_name(message.from_user.first_name, preferred_name)
+
+    try:
+        await bot.send_chat_action(chat_id=message.chat.id, action="record_voice")
+    except Exception:
+        pass
+
+    try:
+        # 1. Telegramdan ovoz faylini (.ogg) xotiraga yuklab olish
+        voice_file_io = io.BytesIO()
+        await bot.download(message.voice, destination=voice_file_io)
+        audio_bytes = voice_file_io.getvalue()
+        audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
+
+        # 2. Audioni transkripsiya qilish (Speech-to-Text)
+        transcript = ai_brain.transcribe_audio(audio_b64, mime_type="audio/ogg")
+        t_low = transcript.lower() if transcript else ""
+
+        # 3. Agar ADMIN ovoz orqali yangi tovar qo'shayotgan bo'lsa
+        if user_id in ADMIN_TELEGRAM_IDS and any(w in t_low for w in ["keldi", "tan narxi", "sotuv narxi", "sotuv", "tovar qo'sh"]):
+            parsed = agent.parse_product_voice_text(transcript)
+            prod_id = DatabaseManager.add_product(
+                name=parsed["name"],
+                category=parsed["category"],
+                size=parsed["size"],
+                color=parsed["color"],
+                cost_price=parsed["cost_price"],
+                sale_price=parsed["sale_price"],
+                stock_quantity=parsed["stock_quantity"],
+                description=parsed["description"]
+            )
+            admin_reply = (
+                f"✅ **Ovozli xabaringiz orqali yangi tovar omborga qo'shildi!**\n\n"
+                f"📦 Nomi: **{parsed['name']}**\n"
+                f"📏 O'lcham: {parsed['size']} | Rang: {parsed['color']}\n"
+                f"💰 Sotuv narxi: **{parsed['sale_price']:,.0f} so'm**\n"
+                f"📊 Omborda: {parsed['stock_quantity']} dona\n"
+                f"🆔 Mahsulot ID: #{prod_id}"
+            )
+            voice_file = await VoiceService.text_to_speech(admin_reply, filename_prefix=f"admin_add_{user_id}")
+            if voice_file and os.path.exists(voice_file):
+                await message.answer_voice(types.FSInputFile(voice_file), caption=admin_reply)
+            else:
+                await safe_send(message.chat.id, admin_reply)
+            return
+
+        # 4. Ovoz orqali buyurtma berilgan bo'lsa (Voice Ordering)
+        has_pending = user_id in USER_PENDING_ORDERS
+        order_details = OrderMatcher.extract_order_details(transcript, has_pending_order=has_pending) if transcript else None
+        if order_details:
+            target_prod = OrderMatcher.match_product(
+                text=transcript,
+                history=ai_brain.conversations.get(user_id, []),
+                pending_product=USER_PENDING_ORDERS.get(user_id)
+            )
+            if target_prod:
+                stock_check = DatabaseManager.check_stock_strict(target_prod["id"], 1)
+                if stock_check["available"]:
+                    order_res = DatabaseManager.create_order(
+                        customer_telegram_id=user_id,
+                        customer_name=user_name,
+                        customer_phone=order_details["phone"],
+                        delivery_address=order_details["address"],
+                        items=[{"product_id": target_prod["id"], "quantity": 1}],
+                        payment_method="cash_on_delivery",
+                        notes=f"Ovozli buyurtma: {transcript}"
+                    )
+                    if order_res["success"]:
+                        new_order_id = order_res["order_id"]
+                        clear_pending_order(user_id)
+
+                        confirm_msg = OrderMatcher.format_order_confirmation(
+                            order_id=new_order_id,
+                            product=target_prod,
+                            user_name=user_name,
+                            phone=order_details["phone"],
+                            address=order_details["address"]
+                        )
+                        speech_text = f"Rahmat, {user_name}! Buyurtmangiz qabul qilindi. Kuryerimiz 30 daqiqada eshigingiz oldiga yetkazib boradi!"
+                        voice_file = await VoiceService.text_to_speech(speech_text, filename_prefix=f"ord_v_{user_id}")
+                        if voice_file and os.path.exists(voice_file):
+                            await message.answer_voice(
+                                types.FSInputFile(voice_file),
+                                caption="🎉 **Buyurtmangiz qabul qilindi!**\nBarcha tafsilotlar quyidagi chekda 👇"
+                            )
+                        await safe_send(message.chat.id, confirm_msg)
+
+                        admin_alert = OrderMatcher.format_admin_alert(
+                            order_id=new_order_id,
+                            product=target_prod,
+                            user_name=user_name,
+                            phone=order_details["phone"],
+                            address=order_details["address"],
+                            full_raw=f"Ovozli transkript: {transcript}"
+                        )
+                        for aid in ADMIN_TELEGRAM_IDS:
+                            try:
+                                await safe_send(aid, admin_alert, reply_markup=get_order_action_keyboard(new_order_id))
+                            except Exception:
+                                pass
+                        return
+
+        # 5. Oddiy ovozli savol bo'lsa
+        if transcript:
+            ext_name = extract_preferred_name(transcript)
+            if ext_name:
+                DatabaseManager.update_customer_preferred_name(user_id, ext_name)
+                user_name = ext_name
+
+            matched_interest = OrderMatcher.match_product(transcript, history=ai_brain.conversations.get(user_id, []))
+            if matched_interest and any(w in t_low for w in ["olaman", "olmoqchiman", "bering", "zakaz", "buyurtma", "yuboring"]):
+                set_pending_order(user_id, matched_interest)
+
+            response_text = ai_brain.ask(
+                user_id=user_id,
+                user_message=transcript,
+                customer_name=user_name
+            )
+        else:
+            response_text = ai_brain.ask_with_audio(
+                user_id=user_id,
+                audio_b64=audio_b64,
+                mime_type="audio/ogg",
+                customer_name=user_name
+            )
+
+        # 6. Javobni tabiiy o'zbek tili ovoziga (TTS) aylantirish
+        clean_text_for_tts = VoiceService._clean_for_speech(response_text)
+        voice_file = await VoiceService.text_to_speech(clean_text_for_tts, filename_prefix=f"ans_{user_id}")
+
+        if voice_file and os.path.exists(voice_file):
+            await message.answer_voice(
+                types.FSInputFile(voice_file),
+                caption="🎙️ **Madinaxon (Ovozli maslahat)**"
+            )
+        await safe_send(message.chat.id, response_text)
+
+    except Exception as e:
+        logger.error(f"Ovozli xabarni tahlil qilishda xatolik: {e}")
+        fallback = (
+            f"Assalomu alaykum, {user_name}! Ovozli xabaringizni eshitdim 😊 "
+            f"Do'konimizda siz so'ragan eng sara kiyimlar va krasovkalar bor. "
+            f"Ingichka bo'ylab 30 daqiqada 2 xil razmerda bepul eltib beramiz! Qaysi o'lchamda kiyasiz?"
+        )
+        await safe_send(message.chat.id, fallback)
+
+# 9. Telegram Guruhlar va Shaxsiy Chatlar (AI Sotuvchi muloqoti + Buyurtma olish)
+@dp.message(F.chat.type.in_([ChatType.GROUP, ChatType.SUPERGROUP]))
+async def handle_group_message(message: types.Message):
+    if not message.text:
+        return
+
+    # Kanaldan avtomatik uzatilgan postlar va botlarga javob bermaslik (Anti-Spam)
+    if getattr(message, "is_automatic_forward", False) or getattr(message, "sender_chat", None):
+        return
+    if not message.from_user or message.from_user.is_bot:
+        return
+
+    text = message.text.lower()
+    bot_info = await bot.get_me()
+    bot_username = (bot_info.username or "Markazsavdo00_bot").lower()
+
+    # Botga murojaat qilinganmi (mention yoki reply)
+    is_mentioned = f"@{bot_username}" in text
+    is_reply_to_bot = bool(
+        message.reply_to_message and
+        message.reply_to_message.from_user and
+        message.reply_to_message.from_user.id == bot_info.id
+    )
+
+    triggers = [
+        "qancha", "narxi", "razmer", "bor", "bormi", "kurtka", "xudi", "ko'ylak", "koylak",
+        "sumka", "sochiq", "ingichka", "dostavka", "yetkazish", "krasovka", "krossovka",
+        "poyabzal", "tufli", "jinsi", "shim", "kiyim", "katalog", "chegirma", "aktsiya",
+        "красовка", "худи", "куртка", "сочик", "туфли", "доставка"
+    ]
+    has_trigger = any(t in text for t in triggers)
+
+
+    if has_trigger or is_mentioned or is_reply_to_bot:
+        try:
+            await bot.send_chat_action(chat_id=message.chat.id, action="typing")
+        except Exception:
+            pass
+
+        clean_user_text = message.text.replace(f"@{bot_info.username}", "").strip()
+        ai_reply = ai_brain.ask(
+            user_id=message.from_user.id,
+            user_message=clean_user_text or message.text,
+            customer_name=message.from_user.first_name or "Mijoz"
+        )
+
+        # Guruh a'zosiga 1-bosishda bot bilan shaxsiy chat ochish tugmasi
+        pm_button = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="🛍️ Lichkada xarid qilish (30 daqiqada yetkazish)", url=f"https://t.me/{bot_info.username}")
+        ]])
+
+        group_text = (
+            f"{ai_reply}\n\n"
+            f"🚗 *Ingichka bo'ylab 30 daqiqada eshigingiz oldiga bepul yetkazamiz! 2 xil razmer olib boramiz.*"
+        )
+        await safe_send(message.chat.id, group_text, reply_markup=pm_button)
+
+@dp.message(F.chat.type == ChatType.PRIVATE)
+async def handle_private_chat(message: types.Message):
+    if not message.text:
+        return
+
+    user_id = message.from_user.id
+    text = message.text
+    text_lower = text.lower()
+
+    # Adminlik huquqini tekshirish (username yoki ID bo'yicha)
+    is_admin_user(message.from_user)
+
+    # CRM xotirasi: Mijoz profilini tekshirish va ismni eslab qolish
+    customer = DatabaseManager.get_customer(user_id)
+    extracted = extract_preferred_name(text)
+    if extracted:
+        DatabaseManager.update_customer_preferred_name(user_id, extracted)
+        customer = DatabaseManager.get_customer(user_id)
+
+    preferred_name = customer.get("preferred_name") if customer else None
+    user_name = clean_display_name(message.from_user.first_name, preferred_name)
+
+    # Admin yangi tovar matnini yuborgan bo'lsa
+    if user_id in ADMIN_TELEGRAM_IDS and ("keldi" in text_lower or "tan narxi" in text_lower or "sotuv" in text_lower):
+        parsed = agent.parse_product_voice_text(text)
+        prod_id = DatabaseManager.add_product(
+            name=parsed["name"],
+            category=parsed["category"],
+            size=parsed["size"],
+            color=parsed["color"],
+            cost_price=parsed["cost_price"],
+            sale_price=parsed["sale_price"],
+            stock_quantity=parsed["stock_quantity"],
+            description=parsed["description"]
+        )
+        await message.answer(
+            f"✅ **Yangi tovar muvaffaqiyatli omborga qo'shildi!**\n\n"
+            f"📦 **Nomi:** {parsed['name']}\n"
+            f"📂 **Kategoriya:** {parsed['category']}\n"
+            f"📏 **Razmer:** {parsed['size']} | **Rang:** {parsed['color']}\n"
+            f"💵 **Tan narx:** {parsed['cost_price']:,.0f} so'm\n"
+            f"💰 **Sotuv narx:** {parsed['sale_price']:,.0f} so'm\n"
+            f"📊 **Omborda:** {parsed['stock_quantity']} dona\n"
+            f"🆔 Mahsulot ID: #{prod_id}"
+        )
+        return
+
+    # === TABIIY TIL INTENTLARI (Foydalanuvchi tugma matnini yozganda ham to'g'ri ishlash) ===
+    # 1. Excel intent
+    if any(w in text_lower for w in ["excel", "eksel", "jadval", "файлни юкла", "excelni ber", "excel malumotlarini"]):
+        if user_id in ADMIN_TELEGRAM_IDS:
+            await message.answer("⏳ Barcha buyurtmalar va ombor qoldiqlari bo'yicha to'liq Excel (.xlsx) hisoboti tayyorlanmoqda...")
+            file_path = ExcelExporter.generate_full_report()
+            await message.answer_document(
+                document=types.FSInputFile(file_path),
+                caption=f"📊 **{STORE_NAME}** - To'liq Moliyaviy va Ombor Excel Hisoboti"
+            )
+            return
+
+    # 2. SaaS Biznes Paneli intent
+    if any(w in text_lower for w in ["saas", "sas", "mrr", "biznes panel", "b2b", "boshqaruv paneli"]):
+        if user_id in ADMIN_TELEGRAM_IDS:
+            data = TenantManager.calculate_saas_mrr()
+            text_saas = (
+                f"🏢 **B2B SaaS Biznes Boshqaruv Markazi**\n"
+                f"───────────────────────\n"
+                f"👥 **Jami ulangan do'konlar:** {data['total_clients']} ta\n"
+                f"🟢 **Faol do'konlar:** {data['active_clients']} ta\n"
+                f"💰 **Oylik daromad (MRR):** {data['monthly_recurring_revenue']:,.0f} so'm\n"
+                f"📈 **Yillik aylanma (ARR):** {data['annual_run_rate']:,.0f} so'm\n\n"
+                f"➕ **Yangi do'kon qo'shish uchun buyruq:**\n"
+                f"`/yangi_dokon Nomi, Egasi, Telefon, Shahar, Dostavka, Token`\n"
+                f"───────────────────────\n"
+                f"💡 *10 ta do'kon ulasangiz = Oyiga kamida 5,000,000 so'm passiv daromad!*"
+            )
+            await safe_send(message.chat.id, text_saas)
+            return
+
+    # 3. Sales Pitch / Nega bu bot kerak? intent
+    if any(w in text_lower for w in ["pitch", "nega bu bot", "nega bot", "foydasi", "dokon egasiga", "do'kon egasi", "nima foyda", "kalkulyator", "taklif", "g'oya", "goyalar"]):
+        pitch_text = SalesPitchAdvisor.get_full_pitch()
+        roi_text = SalesPitchAdvisor.format_roi_message()
+        hacks_text = SalesPitchAdvisor.get_growth_hacks()
+        await safe_send(message.chat.id, pitch_text)
+        await safe_send(message.chat.id, roi_text)
+        await safe_send(message.chat.id, hacks_text)
+        return
+
+    # 4. Kassa Hisoboti intent
+    if any(w in text_lower for w in ["kassa hisoboti", "kassa", "hisobot kursat", "qancha tushum"]):
+        if user_id in ADMIN_TELEGRAM_IDS:
+            await message.answer(
+                "📊 **Qaysi davr bo'yicha kassa hisobotini ko'rmoqchisiz?**\nTanlang 👇",
+                reply_markup=get_report_periods_keyboard()
+            )
+            return
+
+    # 5. Ombor qoldiqlari intent
+    if any(w in text_lower for w in ["ombor va zakaz", "qoldiqlar", "kam qolgan tovar"]):
+        if user_id in ADMIN_TELEGRAM_IDS:
+            alerts = InventoryManager.get_stock_alerts()
+            text_inv = InventoryManager.format_inventory_message(alerts)
+            await safe_send(message.chat.id, text_inv)
+            return
+
+    # Typing action
+    try:
+        await bot.send_chat_action(chat_id=message.chat.id, action="typing")
+    except Exception:
+        pass
+
+    # === BUYURTMANI TO'LIQ ANIQ VA XATOSIZ RASMIYLASHTIRISH ===
+    has_pending = bool(get_pending_order(user_id))
+    order_details = OrderMatcher.extract_order_details(text, has_pending_order=has_pending)
+
+    if order_details:
+        target_prod = OrderMatcher.match_product(
+            text=text,
+            history=ai_brain.conversations.get(user_id, []),
+            pending_product=get_pending_order(user_id)
+        )
+
+        if target_prod:
+            stock_check = DatabaseManager.check_stock_strict(target_prod["id"], 1)
+            if not stock_check["available"]:
+                await safe_send(
+                    chat_id=message.chat.id,
+                    text=(
+                        f"Kechirasiz, {user_name}! Siz tanlagan **'{target_prod['name']}'** tovarimiz ayni daqiqada tugab qoldi.\n\n"
+                        f"Lekin omborimizda xuddi shunday ajoyib boshqa modellar bor! Quyidagi bo'limlardan ko'rishingiz mumkin 👇"
+                    ),
+                    reply_markup=get_category_keyboard()
+                )
+                clear_pending_order(user_id)
+                return
+
+            order_res = DatabaseManager.create_order(
+                customer_telegram_id=user_id,
+                customer_name=user_name,
+                customer_phone=order_details["phone"],
+                delivery_address=order_details["address"],
+                items=[{"product_id": target_prod["id"], "quantity": 1}],
+                payment_method="cash_on_delivery",
+                notes=f"Matnli buyurtma: {text[:150]}"
+            )
+
+            if order_res["success"]:
+                new_order_id = order_res["order_id"]
+                clear_pending_order(user_id)
+
+                # Xaridorga rasmiy chek
+                confirm_msg = OrderMatcher.format_order_confirmation(
+                    order_id=new_order_id,
+                    product=target_prod,
+                    user_name=user_name,
+                    phone=order_details["phone"],
+                    address=order_details["address"]
+                )
+                await safe_send(message.chat.id, confirm_msg)
+
+                # Do'kon egasiga (Admin) push xabarnoma!
+                admin_alert = OrderMatcher.format_admin_alert(
+                    order_id=new_order_id,
+                    product=target_prod,
+                    user_name=user_name,
+                    phone=order_details["phone"],
+                    address=order_details["address"],
+                    full_raw=text
+                )
+                for admin_id in ADMIN_TELEGRAM_IDS:
+                    try:
+                        await safe_send(
+                            chat_id=admin_id,
+                            text=admin_alert,
+                            reply_markup=get_order_action_keyboard(new_order_id)
+                        )
+                    except Exception:
+                        pass
+                return
+        else:
+            await safe_send(
+                chat_id=message.chat.id,
+                text=(
+                    f"Rahmat, {user_name}! Telefoningiz (`{order_details['phone']}`) va manzilingizni qabul qildim.\n\n"
+                    f"Aynan qaysi tovarimizni (krasovka, xudi, kurtka yoki boshqa) yetkazib beraylik? Iltimos, tovar nomini yozing yoki pastdagi katalogdan tanlang 👇"
+                ),
+                reply_markup=get_category_keyboard()
+            )
+            return
+
+    # Agar xaridor "olaman", "bering" deb tovar tanlasa, lekin hali telefon/manzil bermagan bo'lsa
+    matched_prod_intent = OrderMatcher.match_product(text, history=ai_brain.conversations.get(user_id, []))
+    if matched_prod_intent and any(w in text_lower for w in ["olaman", "olmoqchiman", "bering", "zakaz", "buyurtma", "yetkazing", "olib keling", "dostavka"]):
+        set_pending_order(user_id, matched_prod_intent)
+
+
+    # Knopkalarni FAQAT mijoz aniq katalog yoki bo'limlar knopkasini so'raganda chiqaramiz!
+    explicit_catalog = any(k in text_lower for k in ["katalog", "bo'limlar", "kategoriyalar", "barcha tovarlar", "bo'limlarni ko'rsat", "katalog knopkalari"])
+    reply_kb = get_category_keyboard() if explicit_catalog else None
+
+    # Katta AI Agent (Gemini) javobi
+    response = ai_brain.ask(
+        user_id=user_id,
+        user_message=text,
+        customer_name=user_name
+    )
+    await safe_send(message.chat.id, response, reply_markup=reply_kb)
+
+
+from aiohttp import web
+
+async def handle_health_check(request):
+    return web.Response(text="MarkazSavdo Ingichka AI Bot is 100% LIVE and Running 24/7!", status=200)
+
+async def start_web_server(port: int = 8080):
+    app = web.Application()
+    app.router.add_get("/", handle_health_check)
+    app.router.add_get("/health", handle_health_check)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    logger.info(f"Health check web server is listening on port {port} (Render 24/7 Free Mode)")
+
+async def main():
+    init_db()
+    logger.info("Ingichka Baraka Savdo Markazi AI boti ishga tushmoqda...")
+    if BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
+        logger.warning("DIQQAT: config.py faylida TELEGRAM_BOT_TOKEN ko'rsatilmagan.")
+
+    port_env = os.getenv("PORT")
+    if port_env:
+        try:
+            await start_web_server(int(port_env))
+        except Exception as e:
+            logger.error(f"Failed to start web server on port {port_env}: {e}")
+
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
