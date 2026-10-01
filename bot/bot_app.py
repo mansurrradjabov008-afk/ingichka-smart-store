@@ -1190,10 +1190,23 @@ from aiohttp import web
 async def handle_health_check(request):
     return web.Response(text="MarkazSavdo Ingichka AI Bot is 100% LIVE and Running 24/7!", status=200)
 
+async def handle_status(request):
+    prods = DatabaseManager.get_products(in_stock_only=False)
+    data = {
+        "status": "healthy",
+        "bot_username": "Markazsavdo00_bot",
+        "products_count": len(prods),
+        "products": [{"id": p["id"], "name": p["name"], "stock": p["stock_quantity"], "price": p["sale_price"]} for p in prods],
+        "has_gemini": bool(GEMINI_API_KEY),
+        "has_token": bool(BOT_TOKEN)
+    }
+    return web.json_response(data)
+
 async def start_web_server(port: int = 8080):
     app = web.Application()
     app.router.add_get("/", handle_health_check)
     app.router.add_get("/health", handle_health_check)
+    app.router.add_get("/status", handle_status)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", port)
@@ -1220,8 +1233,6 @@ async def self_ping_task():
 async def main():
     init_db()
     logger.info("Ingichka Baraka Savdo Markazi AI boti ishga tushmoqda...")
-    if BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
-        logger.warning("DIQQAT: config.py faylida TELEGRAM_BOT_TOKEN ko'rsatilmagan.")
 
     port_env = os.getenv("PORT")
     if port_env:
@@ -1231,7 +1242,14 @@ async def main():
         except Exception as e:
             logger.error(f"Failed to start web server on port {port_env}: {e}")
 
-    await dp.start_polling(bot)
+    # Cheksiz qayta tiklanuvchi polling zanjiri (Avto-restart / Reconnect)
+    while True:
+        try:
+            logger.info("Telegram bot polling ishga tushirilmoqda...")
+            await dp.start_polling(bot, drop_pending_updates=False)
+        except Exception as e:
+            logger.error(f"Telegram polling uzildi: {e}. 3 soniyadan keyin qayta ulanadi...")
+            await asyncio.sleep(3)
 
 if __name__ == "__main__":
     asyncio.run(main())
