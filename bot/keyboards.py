@@ -3,7 +3,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 def get_main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
     """Asosiy menyu tugmalari"""
     buttons = [
-        [KeyboardButton(text="🛍️ Katalog va Mahsulotlar"), KeyboardButton(text="🚚 Ingichka bo'ylab yetkazish")],
+        [KeyboardButton(text="🛍️ Katalog va Mahsulotlar"), KeyboardButton(text="🚚 Yetkazib berish")],
         [KeyboardButton(text="📞 Sotuvchi bilan bog'lanish"), KeyboardButton(text="📦 Mening buyurtmalarim")]
     ]
     

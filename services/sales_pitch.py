@@ -35,8 +35,7 @@ class SalesPitchAdvisor:
             f"  - Buyurtmani rasmiylashtirib, ombordan yechadi;\n"
             f"  - Ertalab sizga tayyor buyurtmani stolingizga qo'yadi!\n\n"
             f"🎙️ **3. O'ZBEK MENTALITETI: OVOZLI XABAR VA RASMLARNI TUSHUNISH**\n"
-            f"• O'zbekiston xaridorlarining 70%i yozishga erinadi. Ular yo ko'chadagi kiyim rasmini tashlaydi, "
-            f"yoki ovoz yuboradi: *'Aka, menga qora xudi bormi L razmeri?'*\n"
+            f"• O'zbekiston xaridorlarining 70%i yozishga erinadi. Ular yo rasm tashlaydi, yo ovoz yuboradi.\n"
             f"• Oddiy botlar bunga tushunmaydi va mijoz chiqib ketadi.\n"
             f"• **Bizning AI:** Rasmni ham ko'radi, ovozli xabarni ham eshitadi va mijozga "
             f"o'zbek tilida jonli ovoz bilan javob qaytaradi!\n\n"
@@ -47,9 +46,8 @@ class SalesPitchAdvisor:
             f"🛡️ **5. SOXTA TO'LOV CHEKLARINI (FRAUD) ANIQLASH**\n"
             f"• Soxta Click/Payme cheklaridan charchadingizmi?\n"
             f"• AI Vision tizimi mijoz tashlagan to'lov chekining haqiqiyligini tekshiradi va soxta bo'lsa darhol ogohlantiradi.\n\n"
-            f"🚗 **6. MAHALLIY USTUNLIK: 30 DAQIQADA YETKAZISH**\n"
-            f"• Sizning katta marketpleyslardan (Uzum, Zoodmall) asosiy ustunligingiz — TEZLIK!\n"
-            f"• Mijoz buyurtma beradi, kuryeringiz 30 daqiqada eshigiga olib boradi. Mijoz kiyib ko'rib, rozi bo'lsa keyin to'laydi.\n\n"
+            f"⚡ **6. TEZKOR JAVOB VA YUQORI SOTUV**\n"
+            f"• Mijoz kutishni yoqtirmaydi. AI 1 soniyada javob berib, buyurtmani qabul qiladi.\n\n"
             f"🎁 **7. 100% BEXATAR KAFOLAT (RISK-FREE)**\n"
             f"• Do'koningizga o'rnatib bering: **3 kun mutlaqo BEPUL sinab ko'ring!**\n"
             f"• Agar 3 kunda sizga yoqmasa yoki foyda keltirmasa — 1 so'm ham to'lamaysiz!\n"
@@ -60,10 +58,10 @@ class SalesPitchAdvisor:
     @staticmethod
     def calculate_roi(monthly_sales_volume: float = 20_000_000, seller_salary: float = 4_000_000) -> Dict[str, Any]:
         """Do'kon egasi uchun foyda kalkulyatori"""
-        bot_cost = 400_000 # Oylik obuna
-        salary_savings = seller_salary - bot_cost # Oylik tejalgan xarajat
-        night_sales_boost = monthly_sales_volume * 0.20 # Kechki savdo hisobiga +20% o'sish
-        total_monthly_benefit = salary_savings + (night_sales_boost * 0.25) # 25% marja bilan
+        bot_cost = 400_000
+        salary_savings = seller_salary - bot_cost
+        night_sales_boost = monthly_sales_volume * 0.20
+        total_monthly_benefit = salary_savings + (night_sales_boost * 0.25)
         
         return {
             "salary_savings": salary_savings,
@@ -96,19 +94,18 @@ class SalesPitchAdvisor:
         return (
             f"🚀 **DO'KON TUSHUMINI 2-3 BAROBARGA OSHIRUVCHI 5 TA MAXFIY G'OYA:**\n"
             f"─────────────────────────────────\n"
-            f"💡 **1. '2 xil razmer olib borish' (Kiyib ko'rish xizmati)**\n"
-            f"• Nega odamlar onlayn kiyim olmaydi? 'Razmeri to'g'ri kelmay qolsa-chi?' degan qo'rquvdan!\n"
-            f"• Bot xaridorga: 'Kuryerimiz 2 xil razmer (masalan 41 va 42) olib boradi, kiyib ko'rib yoqqanini olasiz!' deydi.\n"
-            f"👉 *Natija: Onlayn savdo konversiyasi 300% ga oshadi!*\n\n"
+            f"💡 **1. To'g'ri maslahat va tezkor xizmat**\n"
+            f"• Mijoz savol berishi bilan unga mos o'lcham va modellarni ko'rsatish.\n"
+            f"👉 *Natija: Onlayn savdo konversiyasi bir necha barobar oshadi!*\n\n"
             f"💡 **2. Smart Up-Sell (Komplekt taklifi / O'rtacha chekni ko'tarish)**\n"
-            f"• Krasovka olayotgan mijozga: 'Krasovka bilan birga erkaklar sumkasi yoki toza Turkiya sochiq to'plamini olsangiz, 25 000 so'm chegirma!' deb taklif qiladi.\n"
-            f"👉 *Natija: Har bir xariddan tushadigan daromad +25-35% ga ko'payadi!*\n\n"
-            f"💡 **3. VIP Keshbek (Mijozni bir umr sizga bog'lash)**\n"
-            f"• Har bir xariddan 5% keshbek mijoz balansida to'planadi va faqat sizning do'koningizda ishlatiladi.\n"
-            f"👉 *Natija: Mijoz boshqa do'konga o'tib ketmaydi, doim sizga qaytadi!*\n\n"
-            f"💡 **4. Tungi Flash Sale (Soat 21:00 dan keyingi eksklyuziv sovg'a)**\n"
-            f"• Tunda buyurtma bergan har bir xaridorga: 'Tungi xaridorimiz bo'lganingiz uchun tekin yetkazish + kichik sovg'a!' beriladi.\n"
-            f"👉 *Natija: Raqobatchilaringiz uxlaganda, sizning kassa to'lib turadi!*\n\n"
+            f"• Mahsulot tanlagan mijozga mos aksessuarlarni taklif qilish.\n"
+            f"👉 *Natija: Har bir xariddan tushadigan daromad ko'payadi!*\n\n"
+            f"💡 **3. Doimiy mijozlar bilan ishlash**\n"
+            f"• Xaridorlar bilan samimiy munosabat o'rnatish va sifatli xizmat ko'rsatish.\n"
+            f"👉 *Natija: Mijoz doimiy xaridorga aylanadi!*\n\n"
+            f"💡 **4. Tungi savdoni yo'lga qo'yish**\n"
+            f"• Tunda buyurtma bergan mijozlarga darhol xizmat ko'rsatish.\n"
+            f"👉 *Natija: Har doim faol sotuvchi bo'lish!*\n\n"
             f"💡 **5. Xariddan so'ng 100% Qoniqish Nazorati (Customer Care)**\n"
-            f"• Tovar yetkazilgach, bot: 'Kiyimingiz yoqdimi? O'lchami loyiq keldimi?' deb so'raydi. Xaridor xursand bo'ladi va do'stlariga tavsiya qiladi!"
+            f"• Buyurtmadan so'ng xaridor fikrini bilish va minnatdorchilik bildirish."
         )

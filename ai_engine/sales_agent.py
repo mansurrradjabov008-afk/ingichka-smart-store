@@ -2,165 +2,132 @@ import os
 import re
 from typing import Dict, Any, List, Optional
 from database.db_manager import DatabaseManager
-from ai_engine.sales_persona import SALES_EXPERT_SYSTEM_PROMPT
-from config import STORE_NAME, LOCATION, DELIVERY_ZONE, CATEGORIES
+from config import STORE_NAME, CATEGORIES, STORE_SETTINGS
+from services.store_settings_manager import StoreSettingsManager
+from services.order_matcher import OrderMatcher
 
 class SalesAgent:
     """
-    15 yillik tajribali o'zbek sotuvchi-menejeri kognitiv tizimi.
+    Do'kon sotuvchi-maslahatchisi offline tizimi.
     Nol gallutsinatsiya (Grounding) kafolati bilan ishlaydi.
     """
 
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("OPENAI_API_KEY")
 
-    def process_message(self, user_text: str, customer_id: int, customer_name: str = "Hurmatli mijoz", context: Optional[Dict] = None) -> str:
+    def process_message(self, user_text: str, customer_id: int, customer_name: str = "Mijoz", context: Optional[Dict] = None) -> str:
         """
-        Mijoz xabarini tahlil qilib, 15 yillik tajribali sotuvchi sifatida mukammal o'zbekcha javob berish.
+        Mijoz xabarini tahlil qilib, 7 ta qat'iy qoidaga mos holda javob berish.
         """
         text_lower = user_text.lower().strip()
 
-        # 1. Salomlashish va kirish
+        # 1. Do'kon sozlamalari (delivery, discount, address) tekshiruvi
+        setting_res = StoreSettingsManager.check_setting_inquiry(user_text)
+        if setting_res:
+            return setting_res["reply"]
+
+        # 2. Qoida 7: Mavjud bo'lmagan o'lcham tekshiruvi
+        size_check = OrderMatcher.check_size_inquiry(user_text)
+        if size_check:
+            return size_check
+
+        # 3. Qoida 5: Jami summani kod hisoblashi (Quote / Narx hisobi)
+        quote_res = OrderMatcher.calculate_quote(user_text)
+        if quote_res:
+            return quote_res
+
+        # 4. Qoida 4: Narx bo'yicha filtr (kod filtrlaydi)
+        price_filt = OrderMatcher.parse_price_filter(user_text)
+        if price_filt:
+            prods = OrderMatcher.filter_products_by_price(price_filt["min_price"], price_filt["max_price"])
+            return OrderMatcher.format_price_filter_response(prods, price_filt["min_price"], price_filt["max_price"])
+
+        # 5. Qoida 6: Salomlashish (Assalomu alaykum, jinsini taxmin qilmasdan)
         if any(w in text_lower for w in ["salom", "assalom", "qalesiz", "yaxshimisiz", "bormisiz"]):
+            clean_name = customer_name if customer_name and customer_name != "Mijoz" else ""
+            greeting = f"Assalomu alaykum, {clean_name}!" if clean_name else "Assalomu alaykum!"
             return (
-                f"Assalomu alaykum, {customer_name}! Xush kelibsiz.\n\n"
-                f"Bizning 'Ingichka Baraka Savdo Markazi' do'konimizda erkaklar, ayollar, bolalar kiyimlari, "
-                f"chiroyli sumkalar va sifatli Turkiya sochiqlari bor.\n\n"
-                f"Aynan kim uchun kiyim yoki narsa qidiryapsiz? O'zim sizga eng yaxshisini tanlashda yordam beraymi?"
+                f"{greeting} Do'konimizda erkaklar, ayollar, bolalar kiyimlari va sifatli poyabzallar mavjud.\n"
+                f"Sizga aynan qaysi turdagi mahsulot ma'qul, qanday kiyim qidiryapsiz?"
             )
 
-        # 2. Buyurtma berish / Telefon / Manzil / Aniq zakaz aniqlansa (ENG YUQORI USTUVORLIK)
+        # 6. Buyurtma berish / Xarid niyati bildirilgan holat (Qoida 1: Faqat xarid niyati bo'lganda manzil/tel so'rash)
+        order_triggers = ["buyurtma", "zakaz", "olaman", "olmoqchiman", "yetkazing", "olib keling", "sotib olaman", "bering"]
+        has_order_intent = any(w in text_lower for w in order_triggers)
         phone_match = re.search(r"(\+?998\s?\d{2}\s?\d{3}\s?\d{2}\s?\d{2}|\b\d{9}\b)", text_lower)
-        if phone_match or any(w in text_lower for w in ["buyurtma", "zakaz", "olaman", "yetkazib bering", "olib keling", "manzil:"]):
+
+        if has_order_intent:
+            if phone_match:
+                return (
+                    "Ajoyib tanlov! Buyurtmangiz qabul qilinmoqda.\n"
+                    "Siz bilan tez orada bog'lanib, buyurtmani tasdiqlaymiz."
+                )
             return (
-                f"Ajoyib tanlov! Buyurtmangiz qabul qilinmoqda. 🛍️\n\n"
-                f"Ingichka shaharchasi bo'yicha kuryerimiz 30-60 daqiqada eshigingiz oldiga yetkazib boradi.\n"
-                f"Siz bilan telefon orqali bog'lanib, buyurtmani tasdiqlaymiz.\n\n"
-                f"🚗 *Kuryerimiz yetib borgach, kiyib ko'rasiz va ma'qul bo'lsa, to'lovni (naqd yoki karta orqali) amalga oshirasiz.*"
+                "Ajoyib tanlov! Buyurtmani rasmiylashtirish uchun telefon raqamingiz va manzilingizni yozib yuboring.\n"
+                "Buyurtmangizni darhol tayyorlaymiz."
             )
 
-        # 3. Yetkazib berish (Dostavka) haqidagi umumiy savol
-        if any(w in text_lower for w in ["dostavka", "yetkazish", "olib kelish", "qayergacha"]) or ("ingichka" in text_lower and not phone_match):
-            return (
-                f"Ha, albatta! Biz aynan **{LOCATION}** bo'ylab buyurtmangizni 30-60 daqiqa ichida eshigingiz oldigacha "
-                f"**mutlaqo bepul** yetkazib beramiz! 🚗💨\n\n"
-                f"Kuryerimiz olib boradi, bemalol kiyib, ko'rib tekshirasiz, ma'qul bo'lsa keyin to'lov qilasiz (naqd yoki karta orqali). "
-                f"Qaysi tovarimizni ko'rib beray?"
-            )
-
-        # 3. Narxlar va e'tirozlar ("qimmat", "arzon")
-        if any(w in text_lower for w in ["qimmat", "narxi baland", "arzonroq"]):
-            return (
-                f"To'g'ri aytasiz, har bir inson puliga yarasha sifatli narsa olishni xohlaydi. 😊\n\n"
-                f"Lekin bizning tovarlarimiz arzon sintetikadan emas, toza Turkiya va Koreya paxtasidan tikilgan. "
-                f"Yuvganda rangi o'chmaydi, cho'zilib ketmaydi. Bozordan har 2 oyda yangisini olgandan ko'ra, "
-                f"bu kiyimlarimiz sizga yillab xizmat qiladi.\n\n"
-                f"Ustiga-ustak Ingichka bo'ylab bepul olib boramiz, kiyib ko'rib o'zingiz baho berasiz. Qaysi modelimizni o'lchamini bilmoqchisiz?"
-            )
-
-        # 4. Bot / AI Agent holati haqida savol berilsa
-        if any(w in text_lower for w in ["ai agent", "ishlayaptimi", "ishlaysanmi", "botmisan", "kimsan", "robotmisan"]):
-            return (
-                f"Assalomu alaykum! Ha, albatta, men 24/7 rejimda to'liq ishlayapman! 😊\n\n"
-                f"Men **{STORE_NAME}**ning 15 yillik tajribaga ega AI sotuvchi-menejeriman.\n"
-                f"Do'konimizdagi barcha erkaklar, ayollar, bolalar kiyimlari, zamonaviy sumkalar va sifatli Turkiya sochiqlari bo'yicha xizmatingizdaman.\n\n"
-                f"🚗 *Ingichka bo'ylab 30-60 daqiqada eshigingizgacha bepul yetkazib beramiz! Sizga qanday kiyim yoki mahsulot kerak?*"
-            )
-
-        # 5. Kategoriya yoki Mahsulot bo'yicha aniq qidiruv
+        # 7. Mahsulot yoki Kategoriya bo'yicha qidiruv
         found_category = None
         if "erkak" in text_lower:
             found_category = "Erkaklar kiyimi"
-        elif "ayol" in text_lower or "ko'ylak" in text_lower or "kardigan" in text_lower:
+        elif "ayol" in text_lower or "ko'ylak" in text_lower:
             found_category = "Ayollar kiyimi"
         elif "bola" in text_lower or "qizim" in text_lower or "o'g'lim" in text_lower:
             found_category = "Bolalar kiyimi"
         elif "sumka" in text_lower or "kamar" in text_lower:
             found_category = "Sumkalar va aksessuarlar"
-        elif "sochiq" in text_lower or "vanna" in text_lower:
+        elif "sochiq" in text_lower:
             found_category = "Sochiqlar va uy to'qimachiligi"
 
-        # Aniq mahsulot qidirish (xudi, kurtka, ko'ylak, sportivka, sumka, sochiq, jiletka)
-        search_terms = ["xudi", "kurtka", "ko'ylak", "sportivka", "sumka", "sochiq", "jiletka", "jinsi", "shim"]
+        search_terms = ["kurtka", "futbolka", "ko'ylak", "kostyum", "palto", "kepka", "krossovka", "krasovka", "jinsi", "shim"]
         matched_term = next((term for term in search_terms if term in text_lower), None)
 
-        # FAQAT KATEGORIYA YOKI MAXSULOT NOMI BO'LSAGINA TOVARLAR CHIQARILADI
         if found_category or matched_term:
             products = DatabaseManager.get_products(
                 category=found_category,
                 search_query=matched_term,
                 in_stock_only=True
             )
-
             if products:
-                reply = [f"Aynan siz so'ragan eng sifatli modellarimizdan hozir omborda borlari bilan tanishtiraman:\n"]
-                for idx, p in enumerate(products[:4], 1):
-                    reply.append(
-                        f"✨ **{idx}. {p['name']}**\n"
-                        f"   • O'lchami: {p['size']} | Rangi: {p['color']}\n"
-                        f"   • Narxi: **{p['sale_price']:,.0f} so'm**\n"
-                        f"   • Tavsifi: {p['description']}\n"
-                        f"   • Omborda: {p['stock_quantity']} dona qolgan\n"
-                    )
+                # Qoida 2: 2-3 jumla, Qoida 3: stock <= 2: 'oxirgi N ta qoldi'
+                reply_lines = ["Siz qidirgan tovarlarimizdan omborda quyidagilar mavjud:"]
+                for idx, p in enumerate(products[:3], 1):
+                    stock = p['stock_quantity']
+                    stock_str = f"oxirgi {stock} ta qoldi" if stock <= 2 and stock > 0 else f"{stock} ta bor"
+                    reply_lines.append(f"{idx}. {p['name']} ({p['size']}) — {p['sale_price']:,.0f} so'm ({stock_str})")
+                reply_lines.append("Qaysi biri sizga ma'qul bo'ldi?")
+                return "\n".join(reply_lines)
 
-                reply.append(
-                    f"💡 *Ingichka bo'yicha 30 daqiqada eshigingizgacha yetkazamiz! Bularning qaysi biri sizga ko'proq ma'qul bo'lyapti, razmerini ajratib qo'yaymi?*"
-                )
-                return "\n".join(reply)
-
-        # 5. Buyurtma berish / Telefon / Manzil yozilgan holat
-        phone_match = re.search(r"(\+?998\s?\d{2}\s?\d{3}\s?\d{2}\s?\d{2}|\b\d{9}\b)", text_lower)
-        if phone_match or any(w in text_lower for w in ["buyurtma", "zakaz", "olaman", "yetkazing", "manzilim", "ko'cha"]):
-            return (
-                f"Ajoyib tanlov! Buyurtmangizni darhol rasmiylashtiramiz. 🛍️\n\n"
-                f"Ingichka shaharchasi bo'yicha kuryerimiz tezda yetkazib borishi uchun menga quyidagilarni yozib yuborsangiz kifoya:\n"
-                f"1️⃣ Tanlagan kiyimingiz nomi, o'lchami va rangi;\n"
-                f"2️⃣ Ingichkadagi aniq manzilingiz (mahalla, ko'cha yoki mo'ljal);\n"
-                f"3️⃣ Bog'lanish uchun telefon raqamingiz.\n\n"
-                f"To'lovni kiyim yetib borgach, kiyib ko'rganingizdan keyin qilsangiz ham bo'ladi (naqd yoki karta)."
-            )
-
-        # 6. Umumiy / Boshqa holatlar uchun mehmondo'st professional sotuvchi javobi
-        all_cats = "\n".join([f"  • {c}" for c in CATEGORIES])
+        # 8. Umumiy savol (Qoida 2: 2-3 jumla)
         return (
-            f"Albatta, qadrdonim! Do'konimizda barcha turdagi sifatli mahsulotlar mavjud:\n\n"
-            f"{all_cats}\n\n"
-            f"Sizga aynan qaysi biri qiziq yoki qanday o'lcham va rangdagi kiyim qidiryapsiz? Aytsangiz, hozir ombordagi eng saralarini rasmlari va narxlari bilan ajratib beraman."
+            f"Do'konimizda barcha turdagi sifatli kiyimlar va aksessuarlar mavjud.\n"
+            f"Sizga aynan qanday mahsulot yoki o'lcham kerak, yordam beraymi?"
         )
 
     @staticmethod
     def parse_product_voice_text(transcription: str) -> Dict[str, Any]:
-        """
-        Ovoz yoki yozuv orqali aytilgan tovar ma'lumotlarini qirqib olib, bazaga qo'shish formati.
-        Masalan: "Turkiya xudi, qora rang, L razmer, 140 ming tan narxi, 220 ming sotuv, 10 dona keldi"
-        """
-        # Standart qolipni tahlil qilish
+        """Admin tomonidan aytilgan tovar ma'lumotlarini qirqib olish"""
         t_low = transcription.lower()
-        
-        # Narxlarni topish
         prices = [int(p) for p in re.findall(r"(\d+)\s*(?:ming|000)", t_low)]
         cost_price = prices[0] * 1000 if len(prices) > 0 else 100000
         sale_price = prices[1] * 1000 if len(prices) > 1 else (cost_price * 1.5)
 
-        # Sonini topish
         qty_match = re.search(r"(\d+)\s*(?:ta|dona|shtuk)", t_low)
         stock_qty = int(qty_match.group(1)) if qty_match else 5
 
-        # Razmer
         size = "M"
-        for s in ["xxl", "xl", "xs", "l", "m", "s", "42", "44", "46", "48", "50", "standart"]:
+        for s in ["xxl", "xl", "xs", "l", "m", "s", "42", "44", "46", "48", "50", "universal", "standart"]:
             if s in t_low:
                 size = s.upper()
                 break
 
-        # Rang
         color = "Klassik"
         for c in ["qora", "oq", "ko'k", "qizil", "sariq", "yashil", "kulrang", "jigarrang", "pushti"]:
             if c in t_low:
                 color = c.capitalize()
                 break
 
-        # Kategoriya aniqlash
         category = "Erkaklar kiyimi"
         if "ayol" in t_low or "ko'ylak" in t_low:
             category = "Ayollar kiyimi"

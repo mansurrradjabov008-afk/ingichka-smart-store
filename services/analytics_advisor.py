@@ -161,7 +161,7 @@ class AnalyticsAdvisor:
         else:
             advices.append("2. **Assortiment faolligi:** Yangi kelgan tovarlarni yaxshi sifatli rasm va o'lchamlari bilan guruhga ko'proq joylashtiring.")
 
-        advices.append("3. **Ingichka bo'ylab tezkor yetkazish:** 30 daqiqada eshigingizgacha bepul yetkazib berish xizmatini har bir postda ta'kidlang — bu sizning eng katta mahalliy ustunligingiz!")
+        advices.append("3. **Tezkor xizmat va sifat:** Mijozlarga sifatli va muloyim xizmat ko'rsatish eng katta ustunligingiz!")
 
         return "\n".join(advices)
 
@@ -189,6 +189,6 @@ class AnalyticsAdvisor:
         lines.append("\n💡 **25 Yillik Ekspert Maslahati (Siz uchun):**")
         lines.append(report["expert_advice"])
         lines.append("───────────────────────")
-        lines.append("📍 *Ingichka Baraka Savdo Markazi*")
+        lines.append("📍 *MarkazSavdo Tahliliy Markazi*")
 
         return "\n".join(lines)

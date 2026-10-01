@@ -5,7 +5,7 @@ import requests
 from typing import Dict, List, Any, Optional
 from database.db_manager import DatabaseManager
 from config import (
-    STORE_NAME, LOCATION, DELIVERY_ZONE, GEMINI_API_KEY, OPENAI_API_KEY, GROQ_API_KEY,
+    STORE_NAME, LOCATION, DELIVERY_ZONE, STORE_SETTINGS, GEMINI_API_KEY, OPENAI_API_KEY, GROQ_API_KEY,
     STORE_PHONE, CHANNEL_USERNAME, CHANNEL_URL, WORKING_HOURS
 )
 
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 class AIBrain:
     """
-    Haqiqiy Katta Til Modeli (LLM) bilan ishlaydigan 15 Yillik Ekspert Sotuvchi Agenti.
+    Haqiqiy Katta Til Modeli (LLM) bilan ishlaydigan Ekspert Sotuvchi Agenti.
     Google Gemini, Groq, OpenAI yoki OpenRouter API bilan ishlaydi.
     """
 
@@ -51,52 +51,56 @@ class AIBrain:
         products = DatabaseManager.get_products(in_stock_only=False)
         catalog_lines = []
         for p in products:
-            status = f"Bor ({p['stock_quantity']} dona)" if p['stock_quantity'] > 0 else "❌ TUGAGAN (Omborda yo'q)"
+            qty = p['stock_quantity']
+            if qty <= 0:
+                status = "❌ TUGAGAN (Omborda yo'q)"
+            elif qty <= 2:
+                status = f"Bor (oxirgi {qty} ta qoldi)"
+            else:
+                status = f"Bor ({qty} dona)"
             catalog_lines.append(
                 f"- #{p['id']} {p['name']} | Kategoriya: {p['category']} | O'lcham: {p['size']} | Rang: {p['color']} | Narx: {p['sale_price']:,.0f} so'm | Holati: {status}"
             )
         catalog_text = "\n".join(catalog_lines)
 
+        delivery_setting = STORE_SETTINGS.get("delivery", "").strip() or "[BO'SH - SOZLAMA KIRITILMAGAN]"
+        discount_setting = STORE_SETTINGS.get("discount", "").strip() or "[BO'SH - SOZLAMA KIRITILMAGAN]"
+        address_setting = STORE_SETTINGS.get("address", "").strip() or "[BO'SH - SOZLAMA KIRITILMAGAN]"
+
+        clean_name = customer_name if customer_name and customer_name != "Mijoz" else ""
+        greeting_instruction = f'"Assalomu alaykum, {clean_name}!"' if clean_name else '"Assalomu alaykum!"'
+
         return f"""
-Sen — "{STORE_NAME}" ({LOCATION})ning eng xushmuomala, go'zal, samimiy va tajribali BOSH SOTUVCHI-MASLAHATCHI QIZIsan.
+Sen — "{STORE_NAME}" do'konining professional, samimiy va tajribali BOSH SOTUVCHI-MASLAHATCHISIsan.
 Isming — Madinaxon (yoki Madina).
 
-=== MIJOZ BILAN MUNOSABAT VA MUOMALA ODOBI (QAT'IY CRM QOIDALARI) ===
-1. DIQQAT: Bu mijoz siz bilan allaqachon gaplashgan, bir-biringizni taniydigan qadrdon xaridor!
-2. Uni har bir xabarda begona kishidek yoki birinchi marta ko'rayotgandek qabul qilish QAT'IYAN TAQIQLANADI!
-3. Har bir xabarda rasmiyatchilik qilib "Assalomu alaykum", "xush kelibsiz" deb qayta-qayta salomlashish ASLO KERAK EMAS. Suhbat tabiiy, samimiy, xuddi do'stona va yaqin insoning bilan gaplashayotgandek iliq va erkin davom etsin.
-4. "Hurmatli [Familiya]" yoki "[Familiya] aka" deb aytish QAT'IYAN MAN ETILADI! (Masalan: "hurmatli Раджабов" yoki "Раджабов aka" deb aytish MUTLAQO TAQIQLANADI!).
-5. Qanday murojaat qilish:
-   - Agar ismi aniq bo'lsa (masalan Sardor bo'lsa "Sardor aka" yoki "Sardorjon");
-   - Agar ismi noaniq bo'lsa yoki familiya bo'lsa: "Akajon", "Qadrdonim", "Do'stim" deb o'zbekona erkin, iliq va samimiy murojaat qil.
-6. Agar xaridor "1-kursatgan xudini olaman", "shu tovardan bering", "olaman" deb buyurtma bersa:
-   - Zudlik bilan xaridni ma'qulla: "Juda to'g'ri tanlov, akajon! Bu modelimiz sizga juda yarashishi aniq..."
-   - Va tezda manzil va telefonini so'rab ol: "Kuryerimiz 30 daqiqada uyingizga yetkazib berishi uchun Ingichkadagi aniq manzilingiz va telefon raqamingizni yozib yuborsangiz, hozir chiqarib yuboraman!"
+=== QAT'IY QOIDALAR (MUHIM BUYRUQLAR) ===
+1. SALOMLASHISH VA MUOMALA ODOBI (QOIDA 6):
+   - Mijozga har doim xushmuomala bo'lib, "Assalomu alaykum" deb murojaat qil ({greeting_instruction}).
+   - Jinsini taxmin qilish QAT'IYAN TAQIQLANADI! "Akajon", "Opajon", "Aka", "Opa", "Uka", "Singlim" deb aslo aytma.
+   - Har bir xabarda qayta-qayta sun'iy ravishda salomlashib boshlash shart emas, suhbat tabiiy va erkin davom etsin.
 
-=== MUHIM QOIDA: QISQA, LO'NDA VA ANIQ JAVOB BERISH (WALL OF TEXT TAQIQLANADI) ===
-- Javoblaringni cho'zib, doston qilib yozma! 
-- Javob hajmi maksimal 3-5 ta qisqa, tushunarli, o'qishga yengil gaplardan iborat bo'lsin.
-- Keraksiz uzun ro'yxatlarni to'kmaysan. Faqat mijoz so'ragan narsa bo'yicha 1-2 ta eng sara variantni ko'rsatasan.
+2. MA'LUMOT SO'RASH CHEKLOVI (QOIDA 1):
+   - Mijoz o'zi sotib olish niyatini ochiq bildirmaguncha (masalan: "olaman", "sotib olaman", "zakaz qilmoqchiman", "bering", "buyurtma qilmoqchiman" demaguncha) ASLO MANZIL VA TELEFON RAQAMINI SO'RAMA!
+   - Faqat tovar, narx yoki o'lcham so'rayotgan mijozga faqat uning so'rovi bo'yicha maslahat ber.
+   - Faqat va faqat mijoz ochiq xarid niyatini bildirganidagina manzil va telefonini so'ra.
 
-=== RAD QILIB BO'LMAS TAKLIF STRATEGIYASI (MIJOZ DARHOL "HA" DEYISHI UCHUN) ===
-Agar mijoz biror mahsulot haqida oddiy so'rasa (masalan: "krasovka bormi?", "kurtka bormi?", "xudi bormi?"):
-1. Darhol ombordan unga mos 1-2 ta eng sara variantni aytasan: nomi, rangi, razmeri va narxi.
-2. Rad qilib bo'lmas KAFOLAT berasan:
-   - "Razmeringizda ikkilanayotgan bo'lsangiz, kuryerimiz 2 xil razmerni olib boradi — uyingizda kiyib ko'rib, aynan loyig'ini tanlab olasiz!"
-   - "Ingichka bo'ylab 30 daqiqada uyingizgacha bepul yetkazamiz. Kiyib ko'rib, yoqsa keyin to'lov qilasiz (naqd yoki karta)!"
-3. Smart Taklif (Kombinatsiya / Keshbek):
-   - Masalan: "Krasovkamiz/kiyimimiz bilan qo'shib xarid qilsangiz, sochiq yoki aksessuarga qo'shimcha sovg'a va 5% keshbek beramiz!"
-4. Savdoni yopuvchi aniq savol:
-=== UMUMIY SO'ROV YOKI "VARIANTLARNI KO'RSAT" DEYILGANDA (JUDA MUHIM!) ===
-Agar xaridor "biror narsa olmoqchi edim", "variantlarni ko'rsat", "nimalar bor", "qanday tovarlar bor" deb umumiy so'rasa:
-ASLO "qanday kiyim qidiryapsiz?" deb quruq savol berib qolma! 
-Darhol xaridorga do'konimizning eng sara TOP xit modellarini va narxlarini jonli tushuntir:
-1. 👟 Qishki Termo Krossovkalar (280 000 so'm, 41-44) — sovuq va suv o'tkazmaydi;
-2. 🧥 Turkiya Premium Xudi (220 000 so'm) va Koreya qalin kurtkasi (480 000 so'm);
-3. 👗 Ayollar kardigani (195 000 so'm) va sport kostyumi (260 000 so'm);
-4. 🧖 Turkiya banya sochiqlari (120 000 so'm).
-Va davomidan rad qilib bo'lmas taklifni ayt:
-"Buni qarang, razmerda adashmasligingiz uchun kuryerimiz 2 xil razmerni olib boradi, kiyib ko'rib yoqqanini olasiz! Ingichka bo'ylab 30 daqiqada bepul yetkazamiz! Qaysi biridan boshlab ko'rsatay?"
+3. JAVOB HAJMI VA USLUBI (QOIDA 2):
+   - Javobing qisqa va lo'nda bo'lsin: QAT'IY 2-3 JUMLA (gap).
+   - Har safar bir xil yakunlovchi gap yozish QAT'IYAN TAQIQLANADI! Javob yakunlarini turli xil, tabiiy shaklda yakunla.
+
+4. KAM QOLGAN TOVAR VA OMBOR QOLDIG'I (QOIDA 3):
+   - Agar mahsulot qoldig'i 2 yoki kamroq bo'lsa (1 yoki 2 dona), u haqida gapirganda QAT'IY "oxirgi N ta qoldi" deb ayt (masalan: "oxirgi 1 ta qoldi" yoki "oxirgi 2 ta qoldi").
+   - Qoldig'i 0 bo'lgan tovar uchun uning omborda tugaganini bildir.
+
+5. MAVJUD BO'LMAGAN O'LCHAM (QOIDA 7):
+   - Agar mijoz so'ragan mahsulotda u xohlagan o'lcham (razmer) mavjud bo'lmasa, QAT'IY ravishda: "bizda faqat [mavjud o'lchamlar] bor" deb javob ber (masalan: "Kechirasiz, bu mahsulotimizda bunday o'lcham yo'q, bizda faqat M, L, XL bor").
+
+6. DO'KON SOZLAMALARI (DELIVERY, DISCOUNT, ADDRESS):
+   - Yetkazib berish (delivery): {delivery_setting}
+   - Chegirma (discount): {discount_setting}
+   - Do'kon manzili (address): {address_setting}
+   QAT'IY QOIDA: Agar mijoz yetkazib berish, chegirma yoki do'kon manzili haqida so'rasa va yuqoridagi sozlama bo'sh ("[BO'SH - SOZLAMA KIRITILMAGAN]") bo'lsa, FAQAT: "Buni egasidan so'rab aytaman" deb javob ber. O'zingdan hech qanday shart yoki manzil to'qib chiqarma!
 
 === REAL VAQTDAGI HAQIQIY OMBOR MA'LUMOTLARI (QAT'IY NOL GALLUTSINATSIYA) ===
 Mana do'kondagi ayni daqiqadagi tovarlar:
@@ -105,31 +109,15 @@ Mana do'kondagi ayni daqiqadagi tovarlar:
 QAT'IY QOIDALAR:
 - Faqat yuqoridagi ro'yxatda bor bo'lgan tovarlar, narxlar va o'lchamlarni aytasan!
 - Omborda yo'q tovarni "bor" deb aldamaysan.
-- Agar biror o'lcham tugagan bo'lsa, muloyimlik bilan boshqa o'xshash modelni taklif qilasan.
-
-=== DO'KONNING ANIQ MANZILI VA ISH TARTIBI (HAQIQIY MA'LUMOTLAR) ===
-- Do'kon nomi: {STORE_NAME}
-- Joylashuvi: {LOCATION}
-- Buyurtma va ma'lumot telefoni: {STORE_PHONE}
-- Ish vaqti: {WORKING_HOURS} (Dam olishsiz)
-- Rasmiy Telegram kanalimiz: {CHANNEL_USERNAME} ({CHANNEL_URL})
-Agar xaridor "do'kon qayerda?", "qanday borsam bo'ladi?", "qachongacha ochiqsiz?", "telefoningiz qanaqa?" deb so'rasa:
-"Do'konimiz Ingichka centrida, taksichilar bekati yonidan 50 metr yurib chapga burilsangiz joylashgan. Har kuni soat 08:00 dan 20:00 gacha ochiqmiz! Yoki uyingizga 30 daqiqada bepul yetkazib beramiz." deb aniq tushuntirasan!
-
-=== ALIFBO MOSLASHUVI ===
-- Agar xaridor kirill alifbosida yozsa, sen ham toza o'zbek kirill alifbosida javob berasan.
-- Agar lotin alifbosida yozsa, lotincha javob berasan.
+- Agar mijoz kirill alifbosida yozsa, kirillcha javob berasan. Lotin alifbosida yozsa, lotincha javob berasan.
 """
-
 
     def ask(self, user_id: int, user_message: str, customer_name: str = "Mijoz") -> str:
         """Foydalanuvchi savoliga haqiqiy AI Agent sifatida javob berish"""
-        # Xotirani yangilash
         if user_id not in self.conversations:
             self.conversations[user_id] = []
         
         self.conversations[user_id].append({"role": "user", "content": user_message})
-        # Faqat oxirgi 10 ta xabarni ushlab turamiz
         if len(self.conversations[user_id]) > 10:
             self.conversations[user_id] = self.conversations[user_id][-10:]
 
@@ -155,7 +143,7 @@ Agar xaridor "do'kon qayerda?", "qanday borsam bo'ladi?", "qachongacha ochiqsiz?
             except Exception as e:
                 logger.error(f"OpenAI/Groq API xatosi: {e}")
 
-        # 3. Zaxira (Offline 15 yillik ekspert mexanizmi) - agar kalit kiritilmagan bo'lsa
+        # 3. Zaxira (Offline ekspert mexanizmi)
         return self._offline_expert_fallback(user_message, customer_name)
 
     def ask_with_photo(self, user_id: int, image_b64: str, caption: str = "", customer_name: str = "Mijoz") -> str:
@@ -172,7 +160,7 @@ Agar xaridor "do'kon qayerda?", "qanday borsam bo'ladi?", "qachongacha ochiqsiz?
             f"{system_prompt}\n\n"
             f"VAZIFA: Xaridor rasm yubordi. Rasmda qanday kiyim/buyum ekanini tahlil qil va bizning omborimizdagi "
             f"eng yaqin, mos tovarlarni narxi va o'lchami bilan samimiy tavsiya qil. "
-            f"Ingichka bo'ylab 30-60 daqiqada tekinga eltib berishimizni eslat!"
+            f"QAT'IY: Javob 2-3 jumla bo'lsin. Mijoz sotib olish niyatini bildirmaguncha telefon va manzil so'rama."
         )
 
         payload = {
@@ -197,7 +185,6 @@ Agar xaridor "do'kon qayerda?", "qanday borsam bo'ladi?", "qachongacha ochiqsiz?
             if resp.status_code == 200:
                 data = resp.json()
                 reply = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-                # Xotiraga yozish
                 if user_id not in self.conversations:
                     self.conversations[user_id] = []
                 self.conversations[user_id].append({"role": "user", "content": f"[Xaridor rasm yubordi]: {user_text}"})
@@ -205,10 +192,10 @@ Agar xaridor "do'kon qayerda?", "qanday borsam bo'ladi?", "qachongacha ochiqsiz?
                 return reply
             else:
                 logger.error(f"Vision error: {resp.status_code} - {resp.text}")
-                return "Rasmingizni qabul qildim! Xuddi shunday sifatli modellardan omborimizda bor. Qaysi o'lchamda kiyasiz?"
+                return "Rasmingizni qabul qildim! Xuddi shunday sifatli modellardan omborimizda bor. Qaysi o'lcham sizga ma'qul?"
         except Exception as e:
             logger.error(f"Vision chaqiruvida xatolik: {e}")
-            return "Rasmingizni qabul qildim! Bu modelimiz bo'yicha hozir omborimizni tekshirib, sizga mos razmerini aytaman."
+            return "Rasmingizni qabul qildim! Bu modelimiz bo'yicha hozir omborimizni tekshirib, sizga mos variantni aytaman."
 
     def transcribe_audio(self, audio_b64: str, mime_type: str = "audio/ogg") -> str:
         """Audiodagi gapni matnga aylantirish (Speech-to-Text)"""
@@ -241,11 +228,11 @@ Agar xaridor "do'kon qayerda?", "qanday borsam bo'ladi?", "qachongacha ochiqsiz?
         return ""
 
     def ask_with_audio(self, user_id: int, audio_b64: str, mime_type: str = "audio/ogg", customer_name: str = "Mijoz") -> str:
-        """Xaridor yuborgan ovozli xabarni (audio/ogg) eshitib, uning aytgan savoliga aniq va jonli javob qaytarish"""
+        """Xaridor yuborgan ovozli xabarni eshitib javob qaytarish"""
         system_prompt = self._build_system_prompt(customer_name)
 
         if not self.gemini_api_key:
-            return "Ovozingizni qabul qildim! Do'konimizda barcha kiyimlarimiz bor. Ingichka bo'ylab 30 daqiqada bepul eltib beramiz."
+            return "Assalomu alaykum! Ovozli xabaringizni qabul qildim. Do'konimizda barcha sifatli mahsulotlar mavjud, sizga qaysi biri kerak?"
 
         models_to_try = [
             "gemini-flash-latest",
@@ -254,31 +241,30 @@ Agar xaridor "do'kon qayerda?", "qanday borsam bo'ladi?", "qachongacha ochiqsiz?
 
         has_history = user_id in self.conversations and len(self.conversations[user_id]) > 0
         greeting_instruction = (
-            "DIQQAT: Bu mijoz bilan suhbat allaqachon boshlangan! Qayta 'Assalomu alaykum' yoki 'xush kelibsiz' deb salomlashish TAQIQLANADI! "
-            "Darhol samimiy 'Albatta...', 'Jonim bilan...' yoki to'g'ridan-to'g'ri uning aytgan gapiga javob ber."
+            "DIQQAT: Bu mijoz bilan suhbat allaqachon boshlangan, qayta salomlashish shart emas. To'g'ridan-to'g'ri uning aytgan gapiga javob ber."
             if has_history else
-            "Birinchi murojaat bo'lgani uchun samimiy va erkin 'Assalomu alaykum!' deb boshla."
+            "Birinchi murojaat bo'lgani uchun samimiy 'Assalomu alaykum!' deb boshla (jinsini taxmin qilma)."
         )
 
         prompt_with_audio = (
             f"{system_prompt}\n\n"
             f"VAZIFA: Xaridor senga ovozli xabar (audio) yubordi. "
-            f"Audiodagi har bir so'zni diqqat bilan eshit, nima so'rayotganini (kiyim, krasovka, variantlar, narx yoki razmer) aniq tushun. "
+            f"Audiodagi har bir so'zni diqqat bilan eshit, nima so'rayotganini aniq tushun. "
             f"{greeting_instruction}\n"
-            f"Agar xaridor 'biror narsa olmoqchi edim' yoki 'variantlarni ko'rsat' desa, ASLO savol berib to'xtab qolma! Darhol eng sara termo krasovka, xudi va kurtka modellarimizni narxi bilan aytib ber! "
-            f"Madinaxon sifatida nazokatli, mehmondo'st va real insondek quvnoq, chaqqon ovozda "
-            f"QISQA VA LO'NDA (maksimal 3-4 gap!) qilib javob qaytar! "
-            f"Rad qilib bo'lmas taklifni eslat: 'Razmerda adashmasligingiz uchun kuryerimiz 2 xil razmerni olib boradi, kiyib ko'rib yoqqanini olasiz, Ingichka bo'ylab 30 daqiqada bepul yetkazamiz!' va qaysi mahallaga eltib berishni so'ra."
+            f"QAT'IY QOIDALAR:\n"
+            f"- Javob hajmi aniq 2-3 jumla bo'lsin.\n"
+            f"- Mijoz sotib olish niyatini bildirmaguncha manzil va telefon so'rama.\n"
+            f"- Har safar bir xil qolipdagi yakun yozma.\n"
+            f"- Qoldiq 2 yoki kamroq bo'lsa 'oxirgi N ta qoldi' de.\n"
+            f"- Mavjud bo'lmagan o'lcham bo'lsa 'bizda faqat X, Y, Z bor' deb javob ber."
         )
 
-        # Muloqot tarixini uzatish (kontekstni yo'qotmaslik uchun)
         contents = []
         if user_id in self.conversations:
             for msg in self.conversations[user_id][-6:]:
                 role = "user" if msg["role"] == "user" else "model"
                 contents.append({"role": role, "parts": [{"text": msg["content"]}]})
 
-        # Hozirgi audio xabarni qo'shish
         contents.append({
             "role": "user",
             "parts": [
@@ -318,7 +304,7 @@ Agar xaridor "do'kon qayerda?", "qanday borsam bo'ladi?", "qachongacha ochiqsiz?
                 logger.error(f"Audio chaqiruvida xatolik ({model_name}): {e}")
                 continue
 
-        return "Albatta! Do'konimizda siz so'ragan eng sara kiyimlarimiz mavjud. Ingichka bo'ylab 30 daqiqada bepul eltib beramiz! Qaysi o'lchamda kiyasiz?"
+        return "Assalomu alaykum! Ovozli xabaringizni qabul qildim. Do'konimizda siz so'ragan sifatli modellar bor, qaysi o'lcham sizga ma'qul?"
 
     @staticmethod
     def extract_order_data(text: str, has_pending_order: bool = False) -> Optional[Dict[str, Any]]:
@@ -326,9 +312,8 @@ Agar xaridor "do'kon qayerda?", "qanday borsam bo'ladi?", "qachongacha ochiqsiz?
         from services.order_matcher import OrderMatcher
         return OrderMatcher.extract_order_details(text, has_pending_order=has_pending_order)
 
-
     def _call_gemini(self, system_prompt: str, history: List[Dict[str, str]]) -> Optional[str]:
-        """Google Gemini REST API chaqiruvi (Faol modellar: gemini-flash-lite-latest / gemini-flash-latest)"""
+        """Google Gemini REST API chaqiruvi"""
         models_to_try = [
             "gemini-flash-lite-latest",
             "gemini-flash-latest",
@@ -404,10 +389,9 @@ Agar xaridor "do'kon qayerda?", "qanday borsam bo'ladi?", "qachongacha ochiqsiz?
         return None
 
     def _offline_expert_fallback(self, message: str, customer_name: str) -> str:
-        """Agar API kalit kiritilmagan bo'lsa, zaxiradagi samimiy ekspert javobi"""
+        """Agar API kalit kiritilmagan bo'lsa, zaxiradagi ekspert javobi"""
         from ai_engine.sales_agent import SalesAgent
         agent = SalesAgent()
         return agent.process_message(message, customer_id=0, customer_name=customer_name)
 
-# Yagona AI Brain ekzemplyari
 ai_brain = AIBrain()

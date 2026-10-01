@@ -24,7 +24,7 @@ from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest
 
 from config import (
-    BOT_TOKEN, ADMIN_TELEGRAM_IDS, STORE_NAME, LOCATION, DELIVERY_ZONE,
+    BOT_TOKEN, ADMIN_TELEGRAM_IDS, STORE_NAME, LOCATION, DELIVERY_ZONE, STORE_SETTINGS,
     GEMINI_API_KEY, OPENAI_API_KEY, GROQ_API_KEY,
     STORE_PHONE, CHANNEL_USERNAME, CHANNEL_URL, WORKING_HOURS, CHANNEL_ID, ADMIN_USERNAMES
 )
@@ -40,6 +40,7 @@ from services.excel_exporter import ExcelExporter
 from services.tenant_manager import TenantManager
 from services.sales_pitch import SalesPitchAdvisor
 from services.order_matcher import OrderMatcher
+from services.store_settings_manager import StoreSettingsManager
 from bot.keyboards import (
     get_main_menu, get_category_keyboard, get_report_periods_keyboard,
     get_order_action_keyboard, get_phone_request_keyboard, get_channel_buy_button
@@ -132,20 +133,20 @@ async def safe_send(chat_id: int, text: str, reply_markup=None):
 
 
 def clean_display_name(name: Optional[str], preferred: Optional[str] = None) -> str:
-    """Xaridorning ismini tozalash va samimiy o'zbekona shaklga keltirish"""
+    """Xaridorning ismini tozalash (jinsini taxmin qilmasdan)"""
     if preferred and preferred.strip():
         return preferred.strip()
     if not name:
-        return "Akajon"
+        return "Mijoz"
     import re
     n = re.sub(r"[\U00010000-\U0010ffff]", "", name).strip()
     n = re.sub(r"[@_#*`~]", "", n).strip()
     parts = n.split()
     if not parts:
-        return "Akajon"
+        return "Mijoz"
     surname_suffixes = ("ov", "ova", "ev", "eva", "yev", "yeva", "ов", "ова", "ев", "ева")
     if len(parts) == 1 and parts[0].lower().endswith(surname_suffixes):
-        return "Akajon"
+        return "Mijoz"
     if parts[0].lower().endswith(surname_suffixes) and len(parts) > 1:
         return parts[1]
     return parts[0]
@@ -190,16 +191,14 @@ async def cmd_start(message: types.Message):
                 set_pending_order(user_id, prod)
                 display_name = clean_display_name(message.from_user.first_name)
                 card_text = (
-                    f"✨ **Ajoyib tanlov, {display_name}!**\n\n"
+                    f"✨ **Ajoyib tanlov!**\n\n"
                     f"🛍️ **Mahsulot:** **{prod['name']}**\n"
                     f"📏 **O'lcham:** {prod['size']} | **Rang:** {prod['color']}\n"
                     f"💰 **Narxi:** **{prod['sale_price']:,.0f} so'm**\n"
                     f"📊 **Omborda:** {prod['stock_quantity']} dona mavjud\n\n"
-                    f"🚗 **Kafolatimiz:** {DELIVERY_ZONE} (30-60 daqiqada bepul yetkazamiz)!\n"
-                    f"👟 **Kiyib ko'rish xizmati:** Razmerda adashmasligingiz uchun kuryerimiz 2 xil razmerni olib boradi — eshigingiz oldida kiyib ko'rib, ma'qulini olasiz!\n"
-                    f"💳 To'lovni faqat tovar yoqqanidan so'ng qilasiz (naqd yoki karta).\n\n"
+                    f"To'lovni tovar yoqqanidan so'ng qilasiz (naqd yoki karta).\n\n"
                     f"📦 **Buyurtmani tasdiqlash uchun:**\n"
-                    f"Iltimos, pastdagi **'📱 Telefon raqamimni yuborish'** tugmasini bosing yoki telefon raqamingiz va Ingichkadagi manzilingizni yozib yuboring 👇"
+                    f"Iltimos, pastdagi **'📱 Telefon raqamimni yuborish'** tugmasini bosing yoki telefon raqamingiz va manzilingizni yozib yuboring 👇"
                 )
                 await safe_send(
                     chat_id=message.chat.id,
@@ -221,27 +220,23 @@ async def cmd_start(message: types.Message):
         await safe_send(
             chat_id=message.chat.id,
             text=(
-                f"👑 **Xush kelibsiz, Xo'jayin!**\n\n"
+                f"👑 **Xush kelibsiz!**\n\n"
                 f"Bu sening **'{STORE_NAME}'** AI Sotuvchi va Menejer tiziming.\n"
-                f"Men 24/7 rejimda:\n"
-                f"• Telegram guruh va kanalingizda mijozlarga sotuvchilik qilaman;\n"
-                f"• Xaridorlar rasm yuborsa, ombordan o'xshashini topib beraman;\n"
-                f"• Buyurtmalarni qabul qilib, ombor qoldig'ini avtomatik yechaman;\n"
-                f"• Yangi buyurtma tushganda sizga bir zumda xabar beraman!\n\n"
+                f"Men 24/7 rejimda mijozlarga xizmat ko'rsataman, buyurtmalarni qabul qilaman va omborni nazorat qilaman.\n\n"
                 f"Quyidagi tugmalar orqali kerakli bo'limni tanlang 👇"
             ),
             reply_markup=get_main_menu(is_admin=True)
         )
     else:
+        clean_name = user_name if user_name and user_name != "Mijoz" else ""
+        greeting = f"Assalomu alaykum, {clean_name}!" if clean_name else "Assalomu alaykum!"
         await safe_send(
             chat_id=message.chat.id,
             text=(
-                f"Assalomu alaykum, {user_name}! Xush kelibsiz!\n\n"
-                f"Men **{STORE_NAME}**ning bosh maslahatchisi — **Madinaxonman** 😊\n\n"
-                f"Bizda sifatli erkaklar, ayollar, bolalar kiyimlari, termo krossovkalar, sumkalar va Turkiya sochiqlari bor.\n"
-                f"🚗 **Kafolatimiz:** {DELIVERY_ZONE}!\n"
-                f"👟 **Kiyib ko'rish xizmati:** Razmerda ikkilansangiz, kuryerimiz 2 xil razmer olib boradi — ma'qulini tanlaysiz!\n\n"
-                f"Sizga qanday kiyim yoki krasovka kerak? Bemalol yozishingiz, ovoz yuborishingiz yoki rasmini tashlashingiz mumkin ✨"
+                f"{greeting} Xush kelibsiz!\n\n"
+                f"Men **{STORE_NAME}** do'konining maslahatchisiman 😊\n\n"
+                f"Bizda sifatli erkaklar, ayollar, bolalar kiyimlari va poyabzallar mavjud.\n\n"
+                f"Sizga qanday mahsulot yoki kiyim kerak? Bemalol yozishingiz yoki mahsulotlarimizni ko'rishingiz mumkin ✨"
             ),
             reply_markup=get_main_menu(is_admin=False)
         )
@@ -263,7 +258,7 @@ async def handle_contact_message(message: types.Message):
             text=(
                 f"📱 Telefon raqamingiz qabul qilindi: `{phone}` ✅\n\n"
                 f"🛍️ Tanlangan tovar: **{pending_prod['name']}** ({pending_prod['sale_price']:,.0f} so'm)\n\n"
-                f"Endi Ingichkadagi aniq yetkazish manzilingizni (ko'cha, uy raqami yoki taniqli mo'ljal) yozib yuboring — kuryerimiz 30 daqiqada yetkazib boradi! 🚗"
+                f"Endi yetkazish manzilingizni (ko'cha, uy raqami yoki taniqli mo'ljal) yozib yuboring."
             ),
             reply_markup=get_main_menu(is_admin=user_id in ADMIN_TELEGRAM_IDS)
         )
@@ -321,22 +316,22 @@ async def handle_customer_orders_list(message: types.Message):
             f"• Vaqt: {o['created_at']}\n"
             f"───────────────────────"
         )
-    text_lines.append("🚗 *Ingichka bo'ylab barcha yetkazishlarimiz mutlaqo bepul!*")
+    text_lines.append("Barcha buyurtmalaringiz bo'yicha savollaringiz bo'lsa, bemalol murojaat qilishingiz mumkin.")
     await safe_send(message.chat.id, "\n".join(text_lines))
 
 # Sotuvchi bilan bog'lanish
 @dp.message(F.text == "📞 Sotuvchi bilan bog'lanish")
 async def handle_contact_seller_info(message: types.Message):
+    address_val = StoreSettingsManager.get_setting("address")
+    address_text = address_val if address_val else "Buni egasidan so'rab aytaman"
     await safe_send(
         chat_id=message.chat.id,
         text=(
             f"📞 **'{STORE_NAME}' Bilan Aloqa:**\n\n"
-            f"📍 **Aniq manzil:** {LOCATION}\n"
-            f"📱 **Buyurtma va telefon:** `{STORE_PHONE}`\n"
-            f"🕒 **Ish vaqti:** {WORKING_HOURS} (Dam olishsiz)\n"
+            f"📍 **Manzil:** {address_text}\n"
+            f"📱 **Telefon:** `{STORE_PHONE}`\n"
+            f"🕒 **Ish vaqti:** {WORKING_HOURS}\n"
             f"📢 **Rasmiy Telegram kanal:** {CHANNEL_USERNAME} ({CHANNEL_URL})\n\n"
-            f"🚗 **Kuryer xizmati:** Ingichka bo'ylab 30-60 daqiqada eshigingiz oldigacha bepul yetkazamiz!\n"
-            f"👟 **Kiyib ko'rish:** Kuryerimiz 2 xil razmer olib boradi — ma'qulini tanlaysiz.\n\n"
             f"Har qanday savolingiz bo'lsa, bemalol matn yoki ovozli xabar yuborishingiz mumkin 😊"
         )
     )
@@ -649,20 +644,30 @@ async def handle_category_select(callback: types.CallbackQuery):
             f"   • Narx: **{p['sale_price']:,.0f} so'm**\n"
             f"   • Omborda: {p['stock_quantity']} dona qolgan\n"
         )
-    text.append("🚗 *Ingichka bo'ylab 30 daqiqada bepul yetkazamiz! Buyurtma berish uchun nomini yoki o'lchamingizni yozing.*")
+    text.append("Qaysi biri sizga ma'qul bo'ldi? Tanlagan tovaringiz haqida yozishingiz mumkin.")
 
     await safe_send(callback.message.chat.id, "\n".join(text))
     await callback.answer()
 
-@dp.message(F.text == "🚚 Ingichka bo'ylab yetkazish")
+@dp.message(F.text.in_(["🚚 Yetkazib berish", "🚚 Ingichka bo'ylab yetkazish"]))
 async def handle_delivery_info(message: types.Message):
-    await message.answer(
-        f"🚗 **Ingichka shaharchasi bo'ylab yetkazib berish xizmati:**\n\n"
-        f"• Yetkazish vaqti: **30-60 daqiqa** ichida!\n"
-        f"• Yetkazish narxi: **MUTLAQO BEPUL**!\n"
-        f"• Afzalligi: Kiyimni eshigingiz oldida kiyib ko'rib, o'lchami yoqsa, keyin to'lov qilasiz.\n"
-        f"• To'lov usullari: Naqd pul yoki karta (Click / Payme)."
-    )
+    user_id = message.from_user.id
+    user_name = clean_display_name(message.from_user.first_name)
+    val = StoreSettingsManager.get_setting("delivery")
+    if not val:
+        await message.answer("Buni egasidan so'rab aytaman")
+        for aid in ADMIN_TELEGRAM_IDS:
+            try:
+                await safe_send(
+                    aid,
+                    f"⚠️ **Yetkazib berish (delivery) sozlamasi bo'sh!**\n\n"
+                    f"👤 Mijoz: {user_name} (ID: `{user_id}`)\n"
+                    f"Mijoz yetkazib berish shartlari haqida so'radi."
+                )
+            except Exception:
+                pass
+        return
+    await message.answer(f"🚚 **Yetkazib berish xizmati:**\n\n{val}")
 
 # 7. AI Sozlamalari (Admin)
 @dp.message(Command("set_ai"))
@@ -737,7 +742,7 @@ async def handle_photo_message(message: types.Message):
             if receipt_res.get("is_valid"):
                 await message.answer(
                     "✅ **To'lov chekingiz muvaffaqiyatli qabul qilindi!**\n\n"
-                    "Kuryerimiz buyurtmangizni tayyorlab, 30 daqiqada eshigingiz oldiga yetkazib boradi!"
+                    "Buyurtmangiz tayyorlanmoqda!"
                 )
                 admin_notify = (
                     f"💳 **MIJOZDAN TO'LOV CHEKI KELDI!**\n\n"
@@ -851,7 +856,7 @@ async def handle_voice_message(message: types.Message):
                             phone=order_details["phone"],
                             address=order_details["address"]
                         )
-                        speech_text = f"Rahmat, {user_name}! Buyurtmangiz qabul qilindi. Kuryerimiz 30 daqiqada eshigingiz oldiga yetkazib boradi!"
+                        speech_text = f"Rahmat, {user_name}! Buyurtmangiz qabul qilindi. Buyurtmangiz tez orada tayyorlanadi!"
                         voice_file = await VoiceService.text_to_speech(speech_text, filename_prefix=f"ord_v_{user_id}")
                         if voice_file and os.path.exists(voice_file):
                             await message.answer_voice(
@@ -914,8 +919,7 @@ async def handle_voice_message(message: types.Message):
         logger.error(f"Ovozli xabarni tahlil qilishda xatolik: {e}")
         fallback = (
             f"Assalomu alaykum, {user_name}! Ovozli xabaringizni eshitdim 😊 "
-            f"Do'konimizda siz so'ragan eng sara kiyimlar va krasovkalar bor. "
-            f"Ingichka bo'ylab 30 daqiqada 2 xil razmerda bepul eltib beramiz! Qaysi o'lchamda kiyasiz?"
+            f"Do'konimizda barcha sifatli tovarlarimiz mavjud. Qaysi o'lchamda kiyasiz?"
         )
         await safe_send(message.chat.id, fallback)
 
@@ -959,6 +963,34 @@ async def handle_group_message(message: types.Message):
             pass
 
         clean_user_text = message.text.replace(f"@{bot_info.username}", "").strip()
+
+        # 1. Do'kon sozlamalari tekshiruvi
+        setting_inq = StoreSettingsManager.check_setting_inquiry(clean_user_text or message.text)
+        if setting_inq:
+            await safe_send(message.chat.id, setting_inq["reply"])
+            if setting_inq["empty"]:
+                for aid in ADMIN_TELEGRAM_IDS:
+                    try:
+                        await safe_send(aid, f"⚠️ Guruhda mijoz {setting_inq['setting_name_uz']} haqida so'radi (bo'sh):\n{clean_user_text}")
+                    except Exception:
+                        pass
+            return
+
+        # 2. Qoida 7: Mavjud bo'lmagan o'lcham
+        size_inq = OrderMatcher.check_size_inquiry(clean_user_text or message.text)
+        if size_inq:
+            await safe_send(message.chat.id, size_inq)
+            return
+
+        # 3. Qoida 4: Narx bo'yicha filtr
+        price_filt = OrderMatcher.parse_price_filter(clean_user_text or message.text)
+        if price_filt:
+            prods = OrderMatcher.filter_products_by_price(price_filt["min_price"], price_filt["max_price"])
+            reply_filt = OrderMatcher.format_price_filter_response(prods, price_filt["min_price"], price_filt["max_price"])
+            await safe_send(message.chat.id, reply_filt)
+            return
+
+        # 4. Katta AI javobi
         ai_reply = ai_brain.ask(
             user_id=message.from_user.id,
             user_message=clean_user_text or message.text,
@@ -967,14 +999,10 @@ async def handle_group_message(message: types.Message):
 
         # Guruh a'zosiga 1-bosishda bot bilan shaxsiy chat ochish tugmasi
         pm_button = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="🛍️ Lichkada xarid qilish (30 daqiqada yetkazish)", url=f"https://t.me/{bot_info.username}")
+            InlineKeyboardButton(text="🛍️ Lichkada xarid qilish", url=f"https://t.me/{bot_info.username}")
         ]])
 
-        group_text = (
-            f"{ai_reply}\n\n"
-            f"🚗 *Ingichka bo'ylab 30 daqiqada eshigingiz oldiga bepul yetkazamiz! 2 xil razmer olib boramiz.*"
-        )
-        await safe_send(message.chat.id, group_text, reply_markup=pm_button)
+        await safe_send(message.chat.id, ai_reply, reply_markup=pm_button)
 
 @dp.message(F.chat.type == ChatType.PRIVATE)
 async def handle_private_chat(message: types.Message):
@@ -1087,6 +1115,45 @@ async def handle_private_chat(message: types.Message):
     except Exception:
         pass
 
+    # === DO'KON SOZLAMALARI VA QAT'IY QOIDALAR TEKSHIRUVI (KOD DARAJASIDA) ===
+    # 0. Do'kon sozlamalari (delivery, discount, address)
+    setting_inq = StoreSettingsManager.check_setting_inquiry(text)
+    if setting_inq:
+        await safe_send(message.chat.id, setting_inq["reply"])
+        if setting_inq["empty"]:
+            alert_text = (
+                f"⚠️ **Do'kon sozlamasi so'rovi ({setting_inq['setting_name_uz']}):**\n\n"
+                f"👤 Mijoz: {user_name} (ID: `{user_id}`)\n"
+                f"💬 Xabar: {text}\n\n"
+                f"Ushbu sozlama kiritilmagan (bo'sh) bo'lgani sababli mijozga 'Buni egasidan so'rab aytaman' deyildi."
+            )
+            for aid in ADMIN_TELEGRAM_IDS:
+                try:
+                    await safe_send(aid, alert_text)
+                except Exception:
+                    pass
+        return
+
+    # 1. Qoida 7: Mavjud bo'lmagan o'lcham
+    size_inq = OrderMatcher.check_size_inquiry(text)
+    if size_inq:
+        await safe_send(message.chat.id, size_inq)
+        return
+
+    # 2. Qoida 5: Jami summani kod hisoblashi (Quote)
+    quote_res = OrderMatcher.calculate_quote(text)
+    if quote_res:
+        await safe_send(message.chat.id, quote_res)
+        return
+
+    # 3. Qoida 4: Narx bo'yicha filtr (kod filtrlaydi, AI emas)
+    price_filt = OrderMatcher.parse_price_filter(text)
+    if price_filt:
+        prods = OrderMatcher.filter_products_by_price(price_filt["min_price"], price_filt["max_price"])
+        reply_filt = OrderMatcher.format_price_filter_response(prods, price_filt["min_price"], price_filt["max_price"])
+        await safe_send(message.chat.id, reply_filt)
+        return
+
     # === BUYURTMANI TO'LIQ ANIQ VA XATOSIZ RASMIYLASHTIRISH ===
     has_pending = bool(get_pending_order(user_id))
     order_details = OrderMatcher.extract_order_details(text, has_pending_order=has_pending)
@@ -1160,7 +1227,7 @@ async def handle_private_chat(message: types.Message):
                 chat_id=message.chat.id,
                 text=(
                     f"Rahmat, {user_name}! Telefoningiz (`{order_details['phone']}`) va manzilingizni qabul qildim.\n\n"
-                    f"Aynan qaysi tovarimizni (krasovka, xudi, kurtka yoki boshqa) yetkazib beraylik? Iltimos, tovar nomini yozing yoki pastdagi katalogdan tanlang 👇"
+                    f"Aynan qaysi tovarimizni yetkazib beraylik? Iltimos, tovar nomini yozing yoki katalogdan tanlang 👇"
                 ),
                 reply_markup=get_category_keyboard()
             )
@@ -1168,9 +1235,8 @@ async def handle_private_chat(message: types.Message):
 
     # Agar xaridor "olaman", "bering" deb tovar tanlasa, lekin hali telefon/manzil bermagan bo'lsa
     matched_prod_intent = OrderMatcher.match_product(text, history=ai_brain.conversations.get(user_id, []))
-    if matched_prod_intent and any(w in text_lower for w in ["olaman", "olmoqchiman", "bering", "zakaz", "buyurtma", "yetkazing", "olib keling", "dostavka"]):
+    if matched_prod_intent and any(w in text_lower for w in ["olaman", "olmoqchiman", "bering", "zakaz", "buyurtma", "yetkazing", "olib keling", "sotib olaman"]):
         set_pending_order(user_id, matched_prod_intent)
-
 
     # Knopkalarni FAQAT mijoz aniq katalog yoki bo'limlar knopkasini so'raganda chiqaramiz!
     explicit_catalog = any(k in text_lower for k in ["katalog", "bo'limlar", "kategoriyalar", "barcha tovarlar", "bo'limlarni ko'rsat", "katalog knopkalari"])
@@ -1182,6 +1248,21 @@ async def handle_private_chat(message: types.Message):
         user_message=text,
         customer_name=user_name
     )
+
+    # Agar AI "Buni egasidan so'rab aytaman" deb javob bersa, egasiga darhol xabar yuborish
+    if "buni egasidan so'rab aytaman" in response.lower() or "buni egasidan sorab aytaman" in response.lower():
+        alert_text = (
+            f"⚠️ **Do'kon sozlamalari bo'yicha mijoz savoli:**\n\n"
+            f"👤 Mijoz: {user_name} (ID: `{user_id}`)\n"
+            f"💬 Xabar: {text}\n\n"
+            f"Bot mijozga 'Buni egasidan so'rab aytaman' deb javob qaytardi."
+        )
+        for aid in ADMIN_TELEGRAM_IDS:
+            try:
+                await safe_send(aid, alert_text)
+            except Exception:
+                pass
+
     await safe_send(message.chat.id, response, reply_markup=reply_kb)
 
 

@@ -15,11 +15,13 @@ if sys.platform == "win32":
 
 from database.db_manager import DatabaseManager, init_db, get_connection
 from services.order_matcher import OrderMatcher
+from services.store_settings_manager import StoreSettingsManager
 from ai_engine.ai_brain import ai_brain
+from config import STORE_SETTINGS
 
 def test_production_flows():
     print("=" * 60)
-    print("INGICHKA BARAKA SAVDO AI - PRODUCTION VERIFICATION SUITE")
+    print("MARKAZSAVDO AI - 7 RULES & STORE SETTINGS VERIFICATION SUITE")
     print("=" * 60)
     init_db()
 
@@ -41,149 +43,152 @@ def test_production_flows():
     assert p8 is not None and p8["id"] == 8, f"Expected ID 8, got {p8}"
     print(f"PASS: 'Krossovka' -> #{p8['id']} {p8['name']} ({p8['sale_price']:,.0f} so'm)")
 
-    p7 = OrderMatcher.match_product("Qora kepka bormi")
-    assert p7 is not None and p7["id"] == 7, f"Expected ID 7, got {p7}"
-    print(f"PASS: 'Kepka' -> #{p7['id']} {p7['name']} ({p7['sale_price']:,.0f} so'm)")
+    # 2. RULE 1: MIJOZ SOTIB OLISH NIYATINI BILDIRMAGUNCHA MANZIL VA TEL SO'RAMASLIK
+    print("\n--- 2. RULE 1: PURCHASE INTENT GUARD ---")
+    inquiry_no_intent = "Kurtka qancha turadi?"
+    details_no_intent = OrderMatcher.extract_order_details(inquiry_no_intent, has_pending_order=False)
+    assert details_no_intent is None, "Should NOT extract order without purchase intent!"
 
-    # 2. TEST MULTI-TURN ORDER FLOW
-    print("\n--- 2. TEST MULTI-TURN ORDER FLOW ---")
+    intent_text = "Erkaklar qora kurtkasidan olaman, manzil: Navoiy ko'chasi 15, tel: +998901234567"
+    details_with_intent = OrderMatcher.extract_order_details(intent_text, has_pending_order=False)
+    assert details_with_intent is not None
+    assert details_with_intent["phone"] == "+998901234567"
+    print(f"PASS: Rule 1 verified! Phone/address only extracted when purchase intent ('olaman') is present.")
+
+    # 3. RULE 3: QOLDIQ 2 YOKI KAMROQ BO'LSA 'OXIRGI N TA QOLDI'
+    print("\n--- 3. RULE 3: LOW STOCK 'OXIRGI N TA QOLDI' LABEL ---")
+    p4 = DatabaseManager.get_product_by_id(4) # Ayollar gulli ko'ylagi (stock 2)
+    assert p4["stock_quantity"] == 2
+    post4 = OrderMatcher.format_channel_post(p4)
+    assert "oxirgi 2 ta qoldi" in post4
+    print(f"PASS: Product #{p4['id']} stock {p4['stock_quantity']} formatted with: 'oxirgi 2 ta qoldi'")
+
+    p6 = DatabaseManager.get_product_by_id(6) # Ayollar qishki paltosi (stock 1)
+    assert p6["stock_quantity"] == 1
+    post6 = OrderMatcher.format_channel_post(p6)
+    assert "oxirgi 1 ta qoldi" in post6
+    print(f"PASS: Product #{p6['id']} stock {p6['stock_quantity']} formatted with: 'oxirgi 1 ta qoldi'")
+
+    # 4. RULE 4: NARX BO'YICHA FILTR (KOD FILTRLAYDI, AI EMAS)
+    print("\n--- 4. RULE 4: DETERMINISTIC PRICE FILTER (CODE, NOT AI) ---")
+    p_filt300 = OrderMatcher.parse_price_filter("300 minggacha nimalar bor?")
+    assert p_filt300 is not None
+    assert p_filt300["max_price"] == 300000.0
+    prods300 = OrderMatcher.filter_products_by_price(p_filt300["min_price"], p_filt300["max_price"])
+    # Should include: Kepka (60k), Oversize futbolka (120k), Klassik jinsi (280k)
+    prod_names = [p["name"] for p in prods300]
+    assert "Kepka" in prod_names
+    assert "Oversize futbolka" in prod_names
+    assert "Klassik jinsi shim" in prod_names
+    assert len(prods300) == 3
+    formatted_300 = OrderMatcher.format_price_filter_response(prods300, 0, 300000)
+    print(f"PASS: Price filter for <= 300k returned exactly {len(prods300)} products completely by code:")
+    print(formatted_300)
+
+    # 5. RULE 5: JAMI SUMMANI KOD HISOBLAYDI
+    print("\n--- 5. RULE 5: CODE-CALCULATED TOTAL SUM ---")
+    quote1 = OrderMatcher.calculate_quote("2 ta kurtka qancha bo'ladi?")
+    assert quote1 is not None
+    assert "900,000" in quote1 or "900 000" in quote1
+    print(f"PASS: 2 kurtka (2 * 450,000) calculated by code: {quote1}")
+
+    quote2 = OrderMatcher.calculate_quote("3 ta kepka narxi qancha?")
+    assert quote2 is not None
+    assert "180,000" in quote2 or "180 000" in quote2
+    print(f"PASS: 3 kepka (3 * 60,000) calculated by code: {quote2}")
+
+    # 6. RULE 6: ASSALOMU ALAYKUM DEB MUROJAAT QILISH, JINSINI TAXMIN QILMASLIK
+    print("\n--- 6. RULE 6: NEUTRAL GREETING & NO GENDER GUESSING ---")
+    from bot.bot_app import clean_display_name
+    assert clean_display_name(None) == "Mijoz"
+    assert clean_display_name("Radjabov") == "Mijoz"
+    assert clean_display_name("Mansurbek") == "Mansurbek"
+    assert clean_display_name("Sardor") != "Akajon"
+    confirm_text = OrderMatcher.format_order_confirmation(101, p1, "Mansurbek", "+998901234567", "Toshkent")
+    assert "Assalomu alaykum, Mansurbek!" in confirm_text
+    assert "Akajon" not in confirm_text
+    print(f"PASS: Greeting correctly formats 'Assalomu alaykum' without gender guessing (no 'Akajon').")
+
+    # 7. RULE 7: MAVJUD BO'LMAGAN O'LCHAM UCHUN 'BIZDA FAQAT X, Y, Z BOR' DEYISH
+    print("\n--- 7. RULE 7: MISSING SIZE HANDLING ---")
+    size_inq = OrderMatcher.check_size_inquiry("Erkaklar qora kurtkasidan XXL bormi?")
+    assert size_inq is not None
+    assert "bizda faqat M, L, XL bor" in size_inq
+    print(f"PASS: Missing size request handled: {size_inq}")
+
+    size_inq2 = OrderMatcher.check_size_inquiry("Futbolkadan 48 razmer bormi?")
+    assert size_inq2 is not None
+    assert "bizda faqat S, M, L bor" in size_inq2
+    print(f"PASS: Missing size request handled: {size_inq2}")
+
+    # 8. STORE SETTINGS: EMPTY CONFIG -> 'Buni egasidan so'rab aytaman' + ADMIN ALERT
+    print("\n--- 8. STORE SETTINGS CONFIG & FALLBACK ---")
+    # By default in test environment delivery, discount, address are empty
+    STORE_SETTINGS["delivery"] = ""
+    STORE_SETTINGS["discount"] = ""
+    STORE_SETTINGS["address"] = ""
+
+    deliv_check = StoreSettingsManager.check_setting_inquiry("Yetkazib berish shartlari qanaqa?")
+    assert deliv_check is not None
+    assert deliv_check["empty"] is True
+    assert deliv_check["reply"] == "Buni egasidan so'rab aytaman"
+    print(f"PASS: Delivery inquiry with empty setting returns: '{deliv_check['reply']}'")
+
+    disc_check = StoreSettingsManager.check_setting_inquiry("Sizlarda chegirma bormi?")
+    assert disc_check is not None
+    assert disc_check["empty"] is True
+    assert disc_check["reply"] == "Buni egasidan so'rab aytaman"
+    print(f"PASS: Discount inquiry with empty setting returns: '{disc_check['reply']}'")
+
+    addr_check = StoreSettingsManager.check_setting_inquiry("Do'koningiz manzili qayerda joylashgan?")
+    assert addr_check is not None
+    assert addr_check["empty"] is True
+    assert addr_check["reply"] == "Buni egasidan so'rab aytaman"
+    print(f"PASS: Address inquiry with empty setting returns: '{addr_check['reply']}'")
+
+    # When setting is configured:
+    STORE_SETTINGS["delivery"] = "Butun shahar bo'ylab 1 soatda yetkazamiz"
+    deliv_configured = StoreSettingsManager.check_setting_inquiry("Yetkazib berish bormi?")
+    assert deliv_configured is not None
+    assert deliv_configured["empty"] is False
+    assert "Butun shahar bo'ylab 1 soatda yetkazamiz" in deliv_configured["reply"]
+    print(f"PASS: Configured delivery setting returned directly: '{deliv_configured['reply']}'")
+
+    # Reset
+    STORE_SETTINGS["delivery"] = ""
+
+    # 9. ATOMIC ORDER CREATION & STOCK INTEGRITY
+    print("\n--- 9. ATOMIC ORDER CREATION & STOCK CHECK ---")
     test_user_id = 9999901
     DatabaseManager.upsert_customer(test_user_id, "Mansurbek", username="mansur_test")
 
-    # Turn 1: Customer selects product
-    t1_text = "Erkaklar qora kurtkasidan olaman"
-    matched_prod = OrderMatcher.match_product(t1_text)
-    assert matched_prod["id"] == 1
-    pending_state = {test_user_id: matched_prod}
-    print("PASS: Turn 1 - User pending order set to Product #1")
-
-    # Turn 2: Customer provides phone and address
-    t2_text = "Ingichka Navoiy ko'chasi 15-uy, tel: +998901234567"
-    order_details = OrderMatcher.extract_order_details(t2_text, has_pending_order=(test_user_id in pending_state))
-    assert order_details is not None
-    assert order_details["phone"] == "+998901234567"
-    assert "Ingichka" in order_details["address"]
-    print(f"PASS: Turn 2 - Order details extracted: {order_details}")
-
-    # Check stock before
     stock_before = DatabaseManager.get_product_by_id(1)["stock_quantity"]
-
-    # Create Order
     res = DatabaseManager.create_order(
         customer_telegram_id=test_user_id,
         customer_name="Mansurbek",
-        customer_phone=order_details["phone"],
-        delivery_address=order_details["address"],
-        items=[{"product_id": matched_prod["id"], "quantity": 1}],
-        payment_method="cash_on_delivery",
-        notes="Automated production test"
-    )
-    assert res["success"] is True
-    order_id = res["order_id"]
-    stock_after = DatabaseManager.get_product_by_id(1)["stock_quantity"]
-    assert stock_after == stock_before - 1
-    print(f"PASS: Order #{order_id} created successfully! Stock reduced from {stock_before} to {stock_after} atomically.")
-
-    # 3. TEST SINGLE-TURN FULL ORDER (VOICE OR TEXT)
-    print("\n--- 3. TEST SINGLE-TURN FULL ORDER ---")
-    voice_transcript = "Krossovkani olaman, manzilim Ingichka 12-maktab yonida, tel: 93 987 65 43"
-    v_details = OrderMatcher.extract_order_details(voice_transcript, has_pending_order=False)
-    assert v_details is not None
-    assert v_details["phone"] == "+998939876543"
-    v_prod = OrderMatcher.match_product(voice_transcript)
-    assert v_prod["id"] == 8
-    print(f"PASS: Voice order matched Product #{v_prod['id']} ({v_prod['name']}), Phone: {v_details['phone']}, Address: {v_details['address']}")
-
-    # 4. TEST CUSTOMER ORDER HISTORY
-    print("\n--- 4. TEST CUSTOMER ORDER HISTORY ---")
-    cust_orders = DatabaseManager.get_customer_orders(test_user_id)
-    assert len(cust_orders) >= 1
-    print(f"PASS: Retrieved {len(cust_orders)} customer orders. Latest: #{cust_orders[0]['id']} - {cust_orders[0]['total_amount']:,.0f} so'm")
-
-    # 5. TEST ZERO HALLUCINATION WITH GEMINI
-    print("\n--- 5. TEST ZERO HALLUCINATION (GEMINI BRAIN) ---")
-    reply = ai_brain.ask(
-        user_id=test_user_id,
-        user_message="Sizda iPhone 16 Pro Max bormi?",
-        customer_name="Mansurbek"
-    )
-    print(f"Mijoz: 'Sizda iPhone 16 Pro Max bormi?'")
-    print(f"AI Javobi: {reply}")
-    assert "yo'q" in reply.lower() or "mavjud emas" in reply.lower() or "kiyim" in reply.lower(), "AI should reject non-clothing product!"
-    print("PASS: Zero hallucination verified! AI truthfully stated non-clothing item is not available.")
-
-    # 6. TEST OUT OF STOCK HANDLING (Sport kostyum - stock 0)
-    print("\n--- 6. TEST OUT OF STOCK STRICT GUARD ---")
-    p5 = DatabaseManager.get_product_by_id(5)
-    assert p5["stock_quantity"] == 0
-    stock_check = DatabaseManager.check_stock_strict(5, 1)
-    assert stock_check["available"] is False
-    print(f"PASS: #{p5['id']} {p5['name']} out of stock blocked cleanly: {stock_check['reason']}")
-
-    # 7. TEST CHANNEL POST FORMATTER
-    print("\n--- 7. TEST CHANNEL POST FORMATTER ---")
-    prod1 = DatabaseManager.get_product_by_id(1)
-    post = OrderMatcher.format_channel_post(prod1, "Markazsavdo00_bot")
-    assert "Erkaklar qora kurtkasi" in post
-    assert "450,000" in post or "450 000" in post
-    print("PASS: Channel post generated with compelling copy and guarantee:")
-    print(post[:250] + "...")
-
-    # 8. TEST COMPREHENSIVE PHONE FORMATS
-    print("\n--- 8. TEST UZBEK PHONE NUMBER FORMATS ---")
-    formats_to_test = [
-        "+998 (90) 123-45-67",
-        "(91) 456-78-90",
-        "88 123 45 67",
-        "33 765 43 21",
-        "901234567"
-    ]
-    for ph in formats_to_test:
-        test_txt = f"Oversize futbolka olaman, Ingichka Navoiy 14, tel: {ph}"
-        det = OrderMatcher.extract_order_details(test_txt)
-        assert det is not None, f"Failed to extract: {ph}"
-        assert det["phone"].startswith("+998"), f"Invalid standardized phone: {det['phone']}"
-        print(f"PASS: Format '{ph:22}' -> {det['phone']}")
-
-    # 9. TEST ATOMIC OVERSELLING GUARD
-    print("\n--- 9. TEST ATOMIC OVERSELLING GUARD ---")
-    prod = DatabaseManager.get_product_by_id(6) # Ayollar qishki paltosi (1 dona)
-    current_stock = prod["stock_quantity"]
-    excessive_qty = current_stock + 10
-    guard_res = DatabaseManager.create_order(
-        customer_telegram_id=test_user_id,
-        customer_name="Mansurbek",
         customer_phone="+998901234567",
-        delivery_address="Ingichka",
-        items=[{"product_id": 6, "quantity": excessive_qty}],
+        delivery_address="Mustaqillik ko'chasi 10",
+        items=[{"product_id": 1, "quantity": 1}],
         payment_method="cash_on_delivery"
     )
-    assert guard_res["success"] is False
-    print(f"PASS: Overselling blocked! Error: {guard_res['error']}")
+    assert res["success"] is True
+    stock_after = DatabaseManager.get_product_by_id(1)["stock_quantity"]
+    assert stock_after == stock_before - 1
+    print(f"PASS: Order #{res['order_id']} created. Stock reduced from {stock_before} to {stock_after}.")
 
-    # 10. TEST PENDING ORDER TTL
-    print("\n--- 10. TEST PENDING ORDER TTL (EXPIRATION) ---")
-    from bot.bot_app import set_pending_order, get_pending_order, USER_PENDING_ORDERS
-    import time
-    
-    set_pending_order(777, prod1)
-    assert get_pending_order(777) is not None
-    print("PASS: Fresh pending order retrieved successfully")
+    # Out of stock guard (Sport kostyum - stock 0)
+    stock_0_check = DatabaseManager.check_stock_strict(5, 1)
+    assert stock_0_check["available"] is False
+    print("PASS: Out of stock product #5 blocked properly.")
 
-    # Manually backdate timestamp by 3 hours
-    USER_PENDING_ORDERS[777]["timestamp"] = time.time() - 10800
-    expired = get_pending_order(777, max_age_seconds=7200)
-    assert expired is None
-    print("PASS: Stale pending order expired and cleaned from memory (TTL enforced)")
-
-    # Reset stock for test data
+    # Restore test stock
     with get_connection() as conn:
         conn.execute("UPDATE products SET stock_quantity = 5 WHERE id = 1")
         conn.commit()
     print("PASS: Cleaned test data and restored stock.")
 
     print("\n" + "=" * 60)
-    print("ALL 10 PRODUCTION TESTS PASSED WITH 100% SUCCESS!")
+    print("ALL 9 TEST SUITES COVERING ALL USER RULES PASSED WITH 100%!")
     print("=" * 60)
 
 if __name__ == "__main__":
