@@ -11,23 +11,14 @@ class OrderMatcher:
     """
 
     KEYWORD_MAP = {
-        16: ["termo", "termal", "waterproof", "qishki krasovka", "qishki krossovka", "suv o'tmaydigan", "термо", "красовка"],
-        17: ["nike", "nayk", "sport krasovka", "air sport", "yengil krasovka", "найк"],
-        18: ["ayollar krossovka", "ayollar krasovka", "ayol krasovka", "oq krasovka", "pudra krasovka"],
-        19: ["charm tufli", "tufli", "klassik tufli", "charm", "туфли"],
-        1: ["xudi", "hudi", "kapushon", "kapushonka", "толстовка", "худи", "qora xudi"],
-        2: ["to'q ko'k xudi", "kok xudi", "ko'k xudi", "xudi m"],
-        3: ["ko'ylak", "koylak", "oq ko'ylak", "oq koylak", "klassik ko'ylak", "рубашка"],
-        4: ["kurtka", "koreya kurtka", "qalin kurtka", "qishki kurtka", "куртка"],
-        5: ["kardigan", "ayollar kardigan", "bej kardigan", "kuzgi kardigan", "кардиган"],
-        6: ["sport kostyum", "trikotaj", "ayollar sport kostyum", "pudra kostyum"],
-        8: ["bolalar sportivka", "momiqli sportivka", "bolalar qishki"],
-        9: ["jiletka", "nimcha", "bolalar nimcha", "issiq nimcha", "жилетка"],
-        10: ["messendjer", "erkaklar sumka", "charm sumka", "planshet sumka"],
-        11: ["ayollar sumka", "qo'l sumka", "sumkacha"],
-        12: ["banya sochiq", "turkiya sochiq", "katta sochiq", "banya sochiqlar", "полотенец", "сочик"],
-        13: ["oshxona sochiq", "oshxona sochiqlari", "6 talik sochiq"],
-        14: ["jinsi", "shim", "turkiya jinsi", "ko'k jinsi", "джинсы"],
+        1: ["qora kurtka", "erkaklar kurtka", "erkaklar qora kurtkasi", "kurtka", "qora kurtkasi", "куртка"],
+        2: ["oversize futbolka", "oq futbolka", "qora futbolka", "futbolka", "futbolkasi", "футболка"],
+        3: ["klassik jinsi shim", "jinsi shim", "jinsi", "shim", "ko'k jinsi", "klassik jinsi", "джинсы"],
+        4: ["ayollar gulli ko'ylagi", "gulli ko'ylak", "gulli koylak", "ayollar ko'ylagi", "ko'ylak", "koylak", "платье"],
+        5: ["sport kostyum", "sportivka", "kostyum", "kulrang kostyum", "спортивка", "костюм"],
+        6: ["ayollar qishki paltosi", "qishki palto", "bej palto", "ayollar paltosi", "palto", "пальто"],
+        7: ["kepka", "qora kepka", "oq kepka", "bita", "кепка"],
+        8: ["krossovka", "krasovka", "oq krossovka", "oq krasovka", "sport krossovka", "poyabzal", "красовка", "кроссовки"],
     }
 
     @classmethod
@@ -90,11 +81,21 @@ class OrderMatcher:
                             if prod and prod.get("stock_quantity", 0) > 0:
                                 return prod
 
-        # 6. Oxirgi zaxira: Agar xaridor "krasovka" yoki "kiyim" deb umumiy aytsa
+        # 6. Oxirgi zaxira: Agar xaridor umumiy aytsa
         if any(w in t_low for w in ["krasovka", "krossovka", "poyabzal"]):
-            return DatabaseManager.get_product_by_id(16) # Qishki termo krasovka
-        if any(w in t_low for w in ["xudi", "hudiy", "kapushon"]):
-            return DatabaseManager.get_product_by_id(1)  # Turkiya xudi
+            return DatabaseManager.get_product_by_id(8) # Krossovka
+        if any(w in t_low for w in ["kurtka"]):
+            return DatabaseManager.get_product_by_id(1) # Erkaklar qora kurtkasi
+        if any(w in t_low for w in ["futbolka"]):
+            return DatabaseManager.get_product_by_id(2) # Oversize futbolka
+        if any(w in t_low for w in ["jinsi", "shim"]):
+            return DatabaseManager.get_product_by_id(3) # Klassik jinsi shim
+        if any(w in t_low for w in ["ko'ylak", "koylak"]):
+            return DatabaseManager.get_product_by_id(4) # Ayollar gulli ko'ylagi
+        if any(w in t_low for w in ["palto"]):
+            return DatabaseManager.get_product_by_id(6) # Ayollar qishki paltosi
+        if any(w in t_low for w in ["kepka"]):
+            return DatabaseManager.get_product_by_id(7) # Kepka
 
         return None
 
