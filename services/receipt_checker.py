@@ -12,26 +12,54 @@ class ReceiptChecker:
     """
 
     @staticmethod
+    def is_likely_payment_intent(caption: Optional[str]) -> bool:
+        """Matnda to'lov, kvitansiya yoki chek niyati bor-yo'qligini aniqlash"""
+        if not caption:
+            return False
+        cap = caption.lower()
+        keywords = [
+            "chek", "to'lov", "tolov", "to'ladim", "toladim", "oplata", 
+            "skrinshot", "payme", "click", "uzum bank", "kvitansiya", 
+            "tushdimi", "otkazdim", "o'tkazdim", "pul tashladim"
+        ]
+        return any(kw in cap for kw in keywords)
+
+    @staticmethod
+    def is_likely_product_inquiry(caption: Optional[str]) -> bool:
+        """Matnda tovar, kiyim, narx yoki o'lcham so'ralganligini aniqlash"""
+        if not caption:
+            return False
+        cap = caption.lower()
+        keywords = [
+            "bormi", "qancha", "narxi", "kiyim", "razmer", "rangi", 
+            "matosi", "qanaqa", "ayting", "shu", "bor", "bormi?", "qanchadan",
+            "olaman", "olmoqchiman", "yetkazasizmi", "necha pul"
+        ]
+        return any(kw in cap for kw in keywords)
+
+    @staticmethod
     def verify_payment_screenshot(image_b64: str) -> Dict[str, Any]:
         if not GEMINI_API_KEY:
-            return {"is_valid": False, "reason": "AI kaliti ulanmagan"}
+            return {"is_receipt": False, "is_valid": False, "reason": "AI kaliti ulanmagan"}
 
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key={GEMINI_API_KEY}"
 
         prompt = """
-Ushbu rasm Click, Payme, Uzum Bank yoki boshqa bank ilovasining to'lov cheki (skrinshoti) ekanligini tekshir.
-Quyidagi ma'lumotlarni aniq aniqlab, o'zbek tilida xulosa ber:
-1. Bu haqiqiy to'lov chekimi yoki oddiy rasmmi?
-2. To'lov summasi qancha (so'mda)?
-3. To'lov holati muvaffaqiyatlimi (To'langan / Bajarilgan)?
-4. To'lov sanasi va vaqti qachon?
+Siz bank to'lov cheklarini tekshiruvchi mutaxassisiz.
+Ushbu rasm bank ilovasi (Click, Payme, Uzum Bank, Anorbank, Apelsin va h.k.) to'lov cheki / kvitansiyasi ekanligini tekshiring.
 
-Javobingni quyidagi formatda lo'nda qilib yoz:
-To'lov ilovasi: [Click / Payme / Uzum / Noma'lum]
+QAT'IY QOIDA:
+- Agar rasmda kiyim, poyabzal, do'kon tovari, odam yoki boshqa oddiy narsa bo'lsa, qat'iyan:
+IS_RECEIPT: YOQ deb javob bering.
+- Faqat va faqat rasm haqiqiy bank ilovasi to'lov cheki yoki o'tkazma kvitansiyasi bo'lsagina:
+IS_RECEIPT: HA deb yozing.
+
+Javob formati:
+IS_RECEIPT: [HA yoki YOQ]
+To'lov ilovasi: [Click / Payme / Uzum / Noma'lum / Chek emas]
 Summa: [Summa] so'm
 Holati: [Muvaffaqiyatli / Kutilmoqda / Noma'lum]
-Sana va vaqt: [Sana]
-Xulosa: [To'lov haqiqiy va qabul qilish mumkin yoki shubhali]
+Xulosa: [To'lov haqiqiy va qabul qilish mumkin yoki Chek emas]
 """
 
         payload = {
@@ -46,7 +74,7 @@ Xulosa: [To'lov haqiqiy va qabul qilish mumkin yoki shubhali]
                     }
                 ]
             }],
-            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 400}
+            "generationConfig": {"temperature": 0.1, "maxOutputTokens": 300}
         }
 
         try:
@@ -54,9 +82,18 @@ Xulosa: [To'lov haqiqiy va qabul qilish mumkin yoki shubhali]
             if resp.status_code == 200:
                 data = resp.json()
                 text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-                is_valid = ("muvaffaqiyatli" in text.lower() or "bajarildi" in text.lower() or "to'langan" in text.lower())
+                text_lower = text.lower()
+
+                # IS_RECEIPT tekshiruvi: faqat HA bo'lsa va YOQ bo'lmasa
+                is_receipt = False
+                if "is_receipt: ha" in text_lower or ("is_receipt:ha" in text_lower):
+                    if "is_receipt: yoq" not in text_lower and "chek emas" not in text_lower:
+                        is_receipt = True
+
+                is_valid = is_receipt and any(kw in text_lower for kw in ["muvaffaqiyatli", "bajarildi", "to'langan", "qabul qilish mumkin"])
+
                 return {
-                    "is_receipt": True,
+                    "is_receipt": is_receipt,
                     "is_valid": is_valid,
                     "analysis": text
                 }

@@ -17,6 +17,7 @@ from database.db_manager import DatabaseManager, init_db, get_connection
 from services.order_matcher import OrderMatcher
 from services.store_settings_manager import StoreSettingsManager
 from ai_engine.ai_brain import ai_brain
+from services.receipt_checker import ReceiptChecker
 from config import STORE_SETTINGS
 
 def test_production_flows():
@@ -187,8 +188,21 @@ def test_production_flows():
         conn.commit()
     print("PASS: Cleaned test data and restored stock.")
 
+    # 10. RECEIPT & PRODUCT PHOTO DIFFERENTIATION SUITE
+    print("\n--- 10. RECEIPT & PRODUCT PHOTO DIFFERENTIATION ---")
+    assert ReceiptChecker.is_likely_product_inquiry("Shu kiyimdan bormi") is True
+    assert ReceiptChecker.is_likely_product_inquiry("narxi qancha?") is True
+    assert ReceiptChecker.is_likely_product_inquiry("razmeri bormi?") is True
+    assert ReceiptChecker.is_likely_product_inquiry("To'lov qildim mana chek") is False
+
+    assert ReceiptChecker.is_likely_payment_intent("To'lov qildim mana chek") is True
+    assert ReceiptChecker.is_likely_payment_intent("Click orqali to'ladim") is True
+    assert ReceiptChecker.is_likely_payment_intent("Shu kiyimdan bormi") is False
+    assert ReceiptChecker.is_likely_payment_intent("Salom narxi qancha") is False
+    print("PASS: Receipt vs Clothing photo intent separation verified with 100% precision!")
+
     print("\n" + "=" * 60)
-    print("ALL 9 TEST SUITES COVERING ALL USER RULES PASSED WITH 100%!")
+    print("ALL 10 TEST SUITES COVERING ALL USER RULES PASSED WITH 100%!")
     print("=" * 60)
 
 if __name__ == "__main__":

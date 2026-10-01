@@ -22,6 +22,8 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeybo
 from aiogram.filters import CommandStart, Command
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from aiohttp import web
 
 from config import (
     BOT_TOKEN, ADMIN_TELEGRAM_IDS, STORE_NAME, LOCATION, DELIVERY_ZONE, STORE_SETTINGS,
@@ -736,8 +738,14 @@ async def handle_photo_message(message: types.Message):
         image_bytes = file_io.getvalue()
         image_b64 = base64.b64encode(image_bytes).decode('utf-8')
 
-        # 1. To'lov cheki (Click / Payme / Uzum) ekanligini tekshirish
-        receipt_res = ReceiptChecker.verify_payment_screenshot(image_b64)
+        # 1. Agar mijoz kiyim yoki tovar haqida so'ragan bo'lsa ("Shu kiyimdan bormi", "narxi qancha"),
+        # to'lov chekini tekshirishga hojat yo'q, to'g'ridan-to'g'ri AI Brain Vision tahliliga yuboramiz.
+        is_product_inq = ReceiptChecker.is_likely_product_inquiry(caption)
+        
+        receipt_res = {"is_receipt": False}
+        if not is_product_inq:
+            receipt_res = ReceiptChecker.verify_payment_screenshot(image_b64)
+
         if receipt_res.get("is_receipt"):
             if receipt_res.get("is_valid"):
                 await message.answer(
@@ -1283,54 +1291,78 @@ async def handle_status(request):
     }
     return web.json_response(data)
 
-async def start_web_server(port: int = 8080):
-    app = web.Application()
-    app.router.add_get("/", handle_health_check)
-    app.router.add_get("/health", handle_health_check)
-    app.router.add_get("/status", handle_status)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
-    logger.info(f"Health check web server is listening on port {port} (Render 24/7 Free Mode)")
-
-async def self_ping_task():
-    render_url = os.getenv("RENDER_EXTERNAL_URL")
-    if not render_url:
-        return
-    health_url = f"{render_url.rstrip('/')}/health"
+async def self_ping_task(base_url: str = "https://ingichka-smart-store-bot.onrender.com"):
+    health_url = f"{base_url.rstrip('/')}/health"
     logger.info(f"Render 24/7 self-pinger faollashtirildi: {health_url}")
-    await asyncio.sleep(60)
+    await asyncio.sleep(20)
     import aiohttp
     async with aiohttp.ClientSession() as session:
         while True:
             try:
-                async with session.get(health_url, timeout=10) as resp:
-                    pass
-            except Exception:
-                pass
-            await asyncio.sleep(600)  # Har 10 daqiqada o'zini uyg'otib turadi
+                async with session.get(health_url, timeout=15) as resp:
+                    logger.info(f"Render self-ping: status {resp.status}")
+            except Exception as e:
+                logger.warning(f"Self-ping xatosi: {e}")
+            await asyncio.sleep(300)
 
-async def main():
+async def on_startup(bot: Bot) -> None:
+    render_url = os.getenv("RENDER_EXTERNAL_URL", "https://ingichka-smart-store-bot.onrender.com")
+    webhook_url = f"{render_url.rstrip('/')}/webhook"
+    logger.info(f"Telegram Webhook sozlanmoqda: {webhook_url}")
+    for attempt in range(5):
+        try:
+            await bot.set_webhook(
+                webhook_url,
+                drop_pending_updates=False,
+                allowed_updates=dp.resolve_used_update_types()
+            )
+            logger.info(f"Telegram Webhook muvaffaqiyatli ulandi: {webhook_url}")
+            break
+        except Exception as e:
+            logger.error(f"Webhook o'rnatishda xatolik (urinish {attempt+1}/5): {e}")
+            await asyncio.sleep(3)
+    asyncio.create_task(self_ping_task(render_url))
+
+def main():
     init_db()
     logger.info("Ingichka Baraka Savdo Markazi AI boti ishga tushmoqda...")
 
     port_env = os.getenv("PORT")
-    if port_env:
-        try:
-            await start_web_server(int(port_env))
-            asyncio.create_task(self_ping_task())
-        except Exception as e:
-            logger.error(f"Failed to start web server on port {port_env}: {e}")
+    is_render = bool(os.getenv("RENDER")) or bool(port_env)
 
-    # Cheksiz qayta tiklanuvchi polling zanjiri (Avto-restart / Reconnect)
-    while True:
-        try:
-            logger.info("Telegram bot polling ishga tushirilmoqda...")
-            await dp.start_polling(bot, drop_pending_updates=False)
-        except Exception as e:
-            logger.error(f"Telegram polling uzildi: {e}. 3 soniyadan keyin qayta ulanadi...")
-            await asyncio.sleep(3)
+    if is_render:
+        port = int(port_env) if port_env else 8080
+        render_url = os.getenv("RENDER_EXTERNAL_URL", "https://ingichka-smart-store-bot.onrender.com")
+        logger.info(f"Render Cloud Webhook rejimi faollashmoqda (Port: {port}, URL: {render_url})")
+
+        dp.startup.register(on_startup)
+
+        app = web.Application()
+        app.router.add_get("/", handle_health_check)
+        app.router.add_get("/health", handle_health_check)
+        app.router.add_get("/status", handle_status)
+
+        SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path="/webhook")
+        setup_application(app, dp, bot=bot)
+
+        web.run_app(app, host="0.0.0.0", port=port)
+    else:
+        logger.info("Mahalliy kompyuter (Local Polling) rejimi faollashtirilmoqda...")
+        async def run_polling():
+            try:
+                await bot.delete_webhook(drop_pending_updates=False)
+                logger.info("Eski webhook tozalandi, getUpdates polling boshlanmoqda...")
+            except Exception as e:
+                logger.warning(f"Webhook tozalashda ogohlantirish: {e}")
+
+            while True:
+                try:
+                    await dp.start_polling(bot, drop_pending_updates=False)
+                except Exception as e:
+                    logger.error(f"Telegram polling uzildi: {e}. 3 soniyadan keyin qayta ulanadi...")
+                    await asyncio.sleep(3)
+
+        asyncio.run(run_polling())
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

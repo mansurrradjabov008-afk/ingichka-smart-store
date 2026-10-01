@@ -1,0 +1,33 @@
+name: Render 24/7 Keep-Alive Pinger
+
+on:
+  schedule:
+    # Run every 5 minutes 24/7 (Render free tier hibernates after 15 minutes of inactivity)
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    name: Ping Render Health Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Send Keep-Alive HTTP Request
+        run: |
+          TARGET_URL="https://ingichka-smart-store-bot.onrender.com/health"
+          echo "=========================================="
+          echo "Ping yuborilmoqda: $TARGET_URL"
+          echo "Vaqt: $(date -u)"
+          echo "=========================================="
+          
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -m 30 "$TARGET_URL" || echo "000")
+          echo "Render javob kodi: $STATUS"
+          
+          if [ "$STATUS" -eq 200 ]; then
+            echo "✅ Render servisi 100% FAOL va UYG'OQ (HTTP 200)!"
+          else
+            echo "⚠️ Birinchi urinishda $STATUS qaytdi. 5 soniyadan so'ng qayta urinish..."
+            sleep 5
+            RETRY_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -m 30 "$TARGET_URL" || echo "000")
+            echo "Qayta urinish natijasi: $RETRY_STATUS"
+          fi
