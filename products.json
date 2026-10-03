@@ -1,0 +1,107 @@
+[
+  {
+    "id": 1,
+    "name": "Erkaklar qora kurtkasi",
+    "category": "Erkaklar kiyimi",
+    "price": 450000,
+    "sizes": ["M", "L", "XL"],
+    "colors": ["qora"],
+    "stock": 5,
+    "aliases": [
+      "kurtka", "qora kurtka", "erkaklar kurtkasi", "erkaklar qora kurtkasi", "qishki kurtka",
+      "куртка", "черная куртка", "мужская куртка", "jacket", "black jacket", "kurtkalar"
+    ]
+  },
+  {
+    "id": 2,
+    "name": "Oversize futbolka",
+    "category": "Erkaklar kiyimi",
+    "price": 120000,
+    "sizes": ["S", "M", "L"],
+    "colors": ["oq", "qora"],
+    "stock": 12,
+    "aliases": [
+      "futbolka", "oversize futbolka", "oq futbolka", "qora futbolka", "mayka", "tshirt", "t-shirt",
+      "футболka", "футболка", "белая футболка", "черная футболка", "futbolkalar"
+    ]
+  },
+  {
+    "id": 3,
+    "name": "Klassik jinsi shim",
+    "category": "Erkaklar kiyimi",
+    "price": 280000,
+    "sizes": ["30", "32", "34"],
+    "colors": ["ko'k"],
+    "stock": 3,
+    "aliases": [
+      "jinsi", "shim", "jinsi shim", "klassik jinsi", "ko'k jinsi", "bryuk", "shimlar",
+      "джинсы", "брюки", "синие джинсы", "jeans", "pants", "classic jeans"
+    ]
+  },
+  {
+    "id": 4,
+    "name": "Ayollar gulli ko'ylagi",
+    "category": "Ayollar kiyimi",
+    "price": 350000,
+    "sizes": ["S", "M"],
+    "colors": ["qizil", "ko'k"],
+    "stock": 2,
+    "aliases": [
+      "ko'ylak", "koylak", "gulli ko'ylak", "ayollar ko'ylagi", "ayollar kiyimi", "qizil ko'ylak", "ko'k ko'ylak",
+      "платье", "женское платье", "платье в цветочек", "dress", "women dress", "ko'ylaklar"
+    ]
+  },
+  {
+    "id": 5,
+    "name": "Sport kostyum",
+    "category": "Sport kiyimlari",
+    "price": 520000,
+    "sizes": ["M", "L"],
+    "colors": ["kulrang"],
+    "stock": 0,
+    "aliases": [
+      "sport kostyum", "sportivka", "kostyum", "kulrang kostyum", "sport kiyimi",
+      "спортивный костюм", "спортивка", "tracksuit", "sport suit"
+    ]
+  },
+  {
+    "id": 6,
+    "name": "Ayollar qishki paltosi",
+    "category": "Ayollar kiyimi",
+    "price": 890000,
+    "sizes": ["S", "M", "L"],
+    "colors": ["bej"],
+    "stock": 1,
+    "aliases": [
+      "palto", "qishki palto", "ayollar paltosi", "bej palto", "issiq palto",
+      "пальто", "зимнее пальто", "женское пальто", "coat", "winter coat", "paltolar"
+    ]
+  },
+  {
+    "id": 7,
+    "name": "Kepka",
+    "category": "Aksessuarlar",
+    "price": 60000,
+    "sizes": ["universal"],
+    "colors": ["qora", "oq"],
+    "stock": 20,
+    "aliases": [
+      "kepka", "bita", "shapka", "baskir", "qora kepka", "oq kepka",
+      "кепка", "бейсболка", "шапка", "cap", "baseball cap", "hat", "kepkalar"
+    ]
+  },
+  {
+    "id": 8,
+    "name": "Krossovka",
+    "category": "Poyabzallar",
+    "price": 380000,
+    "sizes": ["40", "41", "42", "43"],
+    "colors": ["oq"],
+    "stock": 7,
+    "aliases": [
+      "krossovka", "krasovka", "krasovki", "krossovki", "oq krossovka", "oq krasovka",
+      "кроссовка", "кроссовки", "белые кроссовки", "sneakers", "sneaker", "shoes", "kicks",
+      "oyoq kiyim", "poyabzal", "poyafzal", "sport poyabzal", "обувь"
+    ]
+  }
+]

@@ -1,37 +1,42 @@
 import os
+import re
 import json
 import logging
 import requests
-from typing import Dict, List, Any, Optional
-from database.db_manager import DatabaseManager
+from pathlib import Path
+from typing import Dict, List, Any, Optional, Tuple
+
 from config import (
-    STORE_NAME, LOCATION, DELIVERY_ZONE, STORE_SETTINGS, GEMINI_API_KEY, OPENAI_API_KEY, GROQ_API_KEY,
-    STORE_PHONE, CHANNEL_USERNAME, CHANNEL_URL, WORKING_HOURS
+    STORE_NAME, GEMINI_API_KEY, OPENAI_API_KEY, GROQ_API_KEY,
+    STORE_PHONE, CHANNEL_USERNAME, ADMIN_TELEGRAM_IDS
+)
+from database.db_manager import DatabaseManager
+from services.catalog_service import (
+    search_products, load_products, load_store_info, SEARCH_PRODUCTS_TOOL_SCHEMA
 )
 
 logger = logging.getLogger(__name__)
 
-
 class AIBrain:
     """
-    Haqiqiy Katta Til Modeli (LLM) bilan ishlaydigan Ekspert Sotuvchi Agenti.
-    Google Gemini, Groq, OpenAI yoki OpenRouter API bilan ishlaydi.
+    Intellektual LLM Savdo Maslahatchisi.
+    Barcha tovarlar products.json orqali search_products vositasidan olinadi.
+    Do'kon shartlari store_info.json orqali beriladi.
+    Muloqot xotirasi har bir chat_id uchun oxirgi 10 ta xabarni saqlaydi.
     """
 
     def __init__(self):
-        # Foydalanuvchilarning muloqot xotirasi (History)
+        # Muloqot xotirasi: chat_id -> List[Dict[str, str]]
         self.conversations: Dict[int, List[Dict[str, str]]] = {}
-        # Dinamik saqlangan API kalit
         self.gemini_api_key = GEMINI_API_KEY or os.getenv("GEMINI_API_KEY", "")
         self.openai_api_key = OPENAI_API_KEY or os.getenv("OPENAI_API_KEY", "")
         self.groq_api_key = GROQ_API_KEY or os.getenv("GROQ_API_KEY", "")
+        self.operator_requests: List[Dict[str, Any]] = []
 
     def set_api_key(self, key: str, provider: str = "gemini") -> bool:
-        """Telegram orqali API kalitni darhol faollashtirish"""
         key = key.strip()
         if provider == "gemini":
             self.gemini_api_key = key
-            self._gemini_invalid = False
             os.environ["GEMINI_API_KEY"] = key
             return True
         elif provider == "openai":
@@ -44,344 +49,186 @@ class AIBrain:
             return True
         return False
 
-    def is_ai_ready(self) -> bool:
-        return bool(self.gemini_api_key or self.openai_api_key or self.groq_api_key)
+    @staticmethod
+    def detect_language(text: str, history: Optional[List[Dict[str, str]]] = None) -> str:
+        """
+        Foydalanuvchi tilini aniqlash:
+        'uz_latn' (O'zbek lotin), 'uz_cyrl' (O'zbek kirill), 'ru' (Rus tili)
+        """
+        t_low = text.lower()
+        combined = t_low
+        if history:
+            user_msgs = [m.get("content", "").lower() for m in history if m.get("role") == "user"]
+            combined = " ".join(user_msgs[-3:] + [t_low])
 
-    def _build_system_prompt(self, customer_name: str) -> str:
-        # Ombordagi tovarlarni real vaqtda bazadan tortib olish
-        products = DatabaseManager.get_products(in_stock_only=False)
-        catalog_lines = []
-        for p in products:
-            qty = p['stock_quantity']
-            if qty <= 0:
-                status = "❌ TUGAGAN (Omborda yo'q)"
-            elif qty <= 2:
-                status = f"Bor (oxirgi {qty} ta qoldi)"
-            else:
-                status = f"Bor ({qty} dona)"
-            catalog_lines.append(
-                f"- #{p['id']} {p['name']} | Kategoriya: {p['category']} | O'lcham: {p['size']} | Rang: {p['color']} | Narx: {p['sale_price']:,.0f} so'm | Holati: {status}"
-            )
-        catalog_text = "\n".join(catalog_lines)
-
-        delivery_setting = STORE_SETTINGS.get("delivery", "").strip() or "[BO'SH - SOZLAMA KIRITILMAGAN]"
-        discount_setting = STORE_SETTINGS.get("discount", "").strip() or "[BO'SH - SOZLAMA KIRITILMAGAN]"
-        address_setting = STORE_SETTINGS.get("address", "").strip() or "[BO'SH - SOZLAMA KIRITILMAGAN]"
-
-        clean_name = customer_name if customer_name and customer_name != "Mijoz" else ""
-        greeting_instruction = f'"Assalomu alaykum, {clean_name}!"' if clean_name else '"Assalomu alaykum!"'
-
-        return f"""
-Sen — "{STORE_NAME}" do'konining professional, samimiy va tajribali BOSH SOTUVCHI-MASLAHATCHISIsan.
-Isming — Madinaxon (yoki Madina).
-
-=== QAT'IY QOIDALAR (MUHIM BUYRUQLAR) ===
-1. SALOMLASHISH VA MUOMALA ODOBI (QOIDA 6):
-   - Mijozga har doim xushmuomala bo'lib, "Assalomu alaykum" deb murojaat qil ({greeting_instruction}).
-   - Jinsini taxmin qilish QAT'IYAN TAQIQLANADI! "Akajon", "Opajon", "Aka", "Opa", "Uka", "Singlim" deb aslo aytma.
-   - Har bir xabarda qayta-qayta sun'iy ravishda salomlashib boshlash shart emas, suhbat tabiiy va erkin davom etsin.
-
-2. MA'LUMOT SO'RASH CHEKLOVI (QOIDA 1):
-   - Mijoz o'zi sotib olish niyatini ochiq bildirmaguncha (masalan: "olaman", "sotib olaman", "zakaz qilmoqchiman", "bering", "buyurtma qilmoqchiman" demaguncha) ASLO MANZIL VA TELEFON RAQAMINI SO'RAMA!
-   - Faqat tovar, narx yoki o'lcham so'rayotgan mijozga faqat uning so'rovi bo'yicha maslahat ber.
-   - Faqat va faqat mijoz ochiq xarid niyatini bildirganidagina manzil va telefonini so'ra.
-
-3. MASLAHATCHI VA KONSULTATIV SOTUVCHI STANDARTI:
-   - Agar mijoz umumiy kiyim (masalan "ayollar kiyimi", "xotinimga", "ayolimga", "erkaklar kiyimi", "o'zimga", "sovg'a", "biror narsa") so'rasa, ASLO DARHOL manzil/tel SO'RAMA!
-   - Birinchi navbatda mavjud tovarlarni narxi va qoldig'i bilan samimiy tanishtir.
-   - Mijozdan ehtiyojini aniqlashtirish uchun savol ber: qanaqa fason yoqadi (ko'ylakmi, issiq qishki paltomi), qaysi o'lcham (razmer: S, M, L) va qanaqa ranglar ma'qul!
-   - Mijoz rang yoki o'lcham tanlasa, unga mos tovarimizni tavsiya qil va "shuni buyurtma qilamizmi?" deb so'ra.
-   - Faqat va faqat mijoz aniq bir tovarni tanlab, "ha shuni olaman", "zakaz qilaman" deb tasdiqlagandagina telefon va manzilini so'ra.
-
-4. JAVOB HAJMI VA USLUBI (QOIDA 2):
-   - Javobing qisqa va lo'nda bo'lsin: QAT'IY 2-3 JUMLA (gap).
-   - Har safar bir xil yakunlovchi gap yozish QAT'IYAN TAQIQLANADI! Javob yakunlarini turli xil, tabiiy shaklda yakunla.
-
-5. KAM QOLGAN TOVAR VA OMBOR QOLDIG'I (QOIDA 3):
-   - Agar mahsulot qoldig'i 2 yoki kamroq bo'lsa (1 yoki 2 dona), u haqida gapirganda QAT'IY "oxirgi N ta qoldi" deb ayt (masalan: "oxirgi 1 ta qoldi" yoki "oxirgi 2 ta qoldi").
-   - Qoldig'i 0 bo'lgan tovar uchun uning omborda tugaganini bildir.
-
-6. MAVJUD BO'LMAGAN O'LCHAM (QOIDA 7):
-   - Agar mijoz so'ragan mahsulotda u xohlagan o'lcham (razmer) mavjud bo'lmasa, QAT'IY ravishda: "bizda faqat [mavjud o'lchamlar] bor" deb javob ber (masalan: "Kechirasiz, bu mahsulotimizda bunday o'lcham yo'q, bizda faqat M, L, XL bor").
-
-6. DO'KON SOZLAMALARI (DELIVERY, DISCOUNT, ADDRESS):
-   - Yetkazib berish (delivery): {delivery_setting}
-   - Chegirma (discount): {discount_setting}
-   - Do'kon manzili (address): {address_setting}
-   QAT'IY QOIDA: Agar mijoz yetkazib berish, chegirma yoki do'kon manzili haqida so'rasa va yuqoridagi sozlama bo'sh ("[BO'SH - SOZLAMA KIRITILMAGAN]") bo'lsa, FAQAT: "Buni egasidan so'rab aytaman" deb javob ber. O'zingdan hech qanday shart yoki manzil to'qib chiqarma!
-
-=== REAL VAQTDAGI HAQIQIY OMBOR MA'LUMOTLARI (QAT'IY NOL GALLUTSINATSIYA) ===
-Mana do'kondagi ayni daqiqadagi tovarlar:
-{catalog_text}
-
-QAT'IY QOIDALAR:
-- Faqat yuqoridagi ro'yxatda bor bo'lgan tovarlar, narxlar va o'lchamlarni aytasan!
-- Omborda yo'q tovarni "bor" deb aldamaysan.
-- Agar mijoz kirill alifbosida yozsa, kirillcha javob berasan. Lotin alifbosida yozsa, lotincha javob berasan.
-"""
-
-    def ask(self, user_id: int, user_message: str, customer_name: str = "Mijoz") -> str:
-        """Foydalanuvchi savoliga haqiqiy AI Agent sifatida javob berish"""
-        if user_id not in self.conversations:
-            self.conversations[user_id] = []
-        
-        self.conversations[user_id].append({"role": "user", "content": user_message})
-        if len(self.conversations[user_id]) > 10:
-            self.conversations[user_id] = self.conversations[user_id][-10:]
-
-        system_prompt = self._build_system_prompt(customer_name)
-
-        # 1. Google Gemini orqali chaqirish
-        if self.gemini_api_key and not getattr(self, '_gemini_invalid', False):
-            try:
-                response = self._call_gemini(system_prompt, self.conversations[user_id])
-                if response:
-                    self.conversations[user_id].append({"role": "assistant", "content": response})
-                    return response
-            except Exception as e:
-                logger.error(f"Gemini API xatosi: {e}")
-
-        # 2. OpenAI / Groq orqali chaqirish
-        if self.openai_api_key or self.groq_api_key:
-            try:
-                response = self._call_openai_compatible(system_prompt, self.conversations[user_id])
-                if response:
-                    self.conversations[user_id].append({"role": "assistant", "content": response})
-                    return response
-            except Exception as e:
-                logger.error(f"OpenAI/Groq API xatosi: {e}")
-
-        # 3. Zaxira (Offline ekspert mexanizmi)
-        return self._offline_expert_fallback(user_message, customer_name, user_id=user_id)
-
-    def ask_with_photo(self, user_id: int, image_b64: str, caption: str = "", customer_name: str = "Mijoz") -> str:
-        """Xaridor yuborgan kiyim yoki buyum rasmini tahlil qilib, ombordagi tovarlar bilan solishtirish"""
-        system_prompt = self._build_system_prompt(customer_name)
-        user_text = caption if caption else "Menga mana shunaqa yoki shunga o'xshash kiyim kerak. Do'koningizda bormi?"
-
-        if not self.gemini_api_key:
-            return "Rasmingizni ko'rishim uchun AI kalit talab etiladi. Hozirda do'konimizda barcha turdagi erkaklar, ayollar, bolalar kiyimlari mavjud!"
-
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key={self.gemini_api_key}"
-        
-        prompt_with_vision = (
-            f"{system_prompt}\n\n"
-            f"VAZIFA: Xaridor rasm yubordi. Rasmda qanday kiyim/buyum ekanini tahlil qil va bizning omborimizdagi "
-            f"eng yaqin, mos tovarlarni narxi va o'lchami bilan samimiy tavsiya qil. "
-            f"QAT'IY: Javob 2-3 jumla bo'lsin. Mijoz sotib olish niyatini bildirmaguncha telefon va manzil so'rama."
-        )
-
-        payload = {
-            "system_instruction": {"parts": [{"text": prompt_with_vision}]},
-            "contents": [{
-                "role": "user",
-                "parts": [
-                    {"text": user_text},
-                    {
-                        "inlineData": {
-                            "mimeType": "image/jpeg",
-                            "data": image_b64
-                        }
-                    }
-                ]
-            }],
-            "generationConfig": {"temperature": 0.7, "maxOutputTokens": 800}
-        }
-
-        try:
-            resp = requests.post(url, json=payload, timeout=25)
-            if resp.status_code == 200:
-                data = resp.json()
-                reply = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-                if user_id not in self.conversations:
-                    self.conversations[user_id] = []
-                self.conversations[user_id].append({"role": "user", "content": f"[Xaridor rasm yubordi]: {user_text}"})
-                self.conversations[user_id].append({"role": "assistant", "content": reply})
-                return reply
-            else:
-                logger.error(f"Vision error: {resp.status_code} - {resp.text}")
-                return "Rasmingizni qabul qildim! Xuddi shunday sifatli modellardan omborimizda bor. Qaysi o'lcham sizga ma'qul?"
-        except Exception as e:
-            logger.error(f"Vision chaqiruvida xatolik: {e}")
-            return "Rasmingizni qabul qildim! Bu modelimiz bo'yicha hozir omborimizni tekshirib, sizga mos variantni aytaman."
-
-    def transcribe_audio(self, audio_b64: str, mime_type: str = "audio/ogg") -> str:
-        """Audiodagi gapni matnga aylantirish (Speech-to-Text)"""
-        if not self.gemini_api_key:
-            return ""
-
-        models = ["gemini-flash-latest", "gemini-flash-lite-latest"]
-        payload = {
-            "contents": [{
-                "parts": [
-                    {"text": "Ushbu audiodagi gapni eshitib, faqat xaridor/foydalanuvchi aytgan so'zlarni toza o'zbek tilida transkripsiya qilib ber. Boshqa ortiqcha gap yozma."},
-                    {"inlineData": {"mimeType": mime_type, "data": audio_b64}}
-                ]
-            }],
-            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 300}
-        }
-
-        for m in models:
-            try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={self.gemini_api_key}"
-                resp = requests.post(url, json=payload, timeout=20)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    candidates = data.get("candidates", [])
-                    if candidates:
-                        return candidates[0]["content"]["parts"][0]["text"].strip()
-            except Exception as e:
-                logger.error(f"Transcribe error with {m}: {e}")
-                continue
-        return ""
-
-    def ask_with_audio(self, user_id: int, audio_b64: str, mime_type: str = "audio/ogg", customer_name: str = "Mijoz") -> str:
-        """Xaridor yuborgan ovozli xabarni eshitib javob qaytarish"""
-        system_prompt = self._build_system_prompt(customer_name)
-
-        if not self.gemini_api_key:
-            return "Assalomu alaykum! Ovozli xabaringizni qabul qildim. Do'konimizda barcha sifatli mahsulotlar mavjud, sizga qaysi biri kerak?"
-
-        models_to_try = [
-            "gemini-flash-latest",
-            "gemini-flash-lite-latest"
+        # Rus tili belgilari
+        ru_words = [
+            "здравствуйте", "привет", "есть", "цена", "доставка", "какие", "хочу",
+            "размер", "куртка", "кроссовки", "джинсы", "белые", "черные", "сколько",
+            "стоит", "купить", "пожалуйста", "оплата", "возврат", "оператор", "человек"
         ]
+        if any(w in combined for w in ru_words):
+            return "ru"
 
-        has_history = user_id in self.conversations and len(self.conversations[user_id]) > 0
-        greeting_instruction = (
-            "DIQQAT: Bu mijoz bilan suhbat allaqachon boshlangan, qayta salomlashish shart emas. To'g'ridan-to'g'ri uning aytgan gapiga javob ber."
-            if has_history else
-            "Birinchi murojaat bo'lgani uchun samimiy 'Assalomu alaykum!' deb boshla (jinsini taxmin qilma)."
-        )
+        # O'zbek kirill belgilari
+        cyrl_chars = re.findall(r"[а-яА-ЯёЁўЎқҚғҒҳҲ]", combined)
+        uz_cyrl_specific = ["борми", "қандай", "неча", "қанча", "етказиб", "кийим", "салом", "олмоқчи", "рахмат", "пул"]
+        if any(w in combined for w in uz_cyrl_specific):
+            return "uz_cyrl"
+        if len(cyrl_chars) > len(text) * 0.3 and len(cyrl_chars) > 3:
+            # Agar ruscha so'z bo'lmasa, kirill yozuvidagi o'zbek tili
+            return "uz_cyrl"
 
-        prompt_with_audio = (
-            f"{system_prompt}\n\n"
-            f"VAZIFA: Xaridor senga ovozli xabar (audio) yubordi. "
-            f"Audiodagi har bir so'zni diqqat bilan eshit, nima so'rayotganini aniq tushun. "
-            f"{greeting_instruction}\n"
-            f"QAT'IY QOIDALAR:\n"
-            f"- Javob hajmi aniq 2-3 jumla bo'lsin.\n"
-            f"- Mijoz sotib olish niyatini bildirmaguncha manzil va telefon so'rama.\n"
-            f"- Har safar bir xil qolipdagi yakun yozma.\n"
-            f"- Qoldiq 2 yoki kamroq bo'lsa 'oxirgi N ta qoldi' de.\n"
-            f"- Mavjud bo'lmagan o'lcham bo'lsa 'bizda faqat X, Y, Z bor' deb javob ber."
-        )
-
-        contents = []
-        if user_id in self.conversations:
-            for msg in self.conversations[user_id][-6:]:
-                role = "user" if msg["role"] == "user" else "model"
-                contents.append({"role": role, "parts": [{"text": msg["content"]}]})
-
-        contents.append({
-            "role": "user",
-            "parts": [
-                {"text": "Xaridorning hozirgi ovozli xabari:"},
-                {
-                    "inlineData": {
-                        "mimeType": mime_type,
-                        "data": audio_b64
-                    }
-                }
-            ]
-        })
-
-        payload = {
-            "system_instruction": {"parts": [{"text": prompt_with_audio}]},
-            "contents": contents,
-            "generationConfig": {"temperature": 0.7, "maxOutputTokens": 800}
-        }
-
-        for model_name in models_to_try:
-            try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={self.gemini_api_key}"
-                resp = requests.post(url, json=payload, timeout=25)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    candidates = data.get("candidates", [])
-                    if candidates:
-                        reply = candidates[0]["content"]["parts"][0]["text"].strip()
-                        if user_id not in self.conversations:
-                            self.conversations[user_id] = []
-                        self.conversations[user_id].append({"role": "user", "content": "[Xaridor ovozli xabar yubordi]"})
-                        self.conversations[user_id].append({"role": "assistant", "content": reply})
-                        return reply
-                else:
-                    logger.warning(f"Audio model {model_name} xatosi: {resp.status_code} - {resp.text[:100]}")
-            except Exception as e:
-                logger.error(f"Audio chaqiruvida xatolik ({model_name}): {e}")
-                continue
-
-        return "Assalomu alaykum! Ovozli xabaringizni qabul qildim. Do'konimizda siz so'ragan sifatli modellar bor, qaysi o'lcham sizga ma'qul?"
+        # Standart: O'zbek lotin
+        return "uz_latn"
 
     @staticmethod
-    def extract_order_data(text: str, has_pending_order: bool = False) -> Optional[Dict[str, Any]]:
-        """Xabar ichidan telefon, manzil va tovar buyurtmasi mavjudligini aniqlash"""
-        from services.order_matcher import OrderMatcher
-        return OrderMatcher.extract_order_details(text, has_pending_order=has_pending_order)
-
-    def _call_gemini(self, system_prompt: str, history: List[Dict[str, str]]) -> Optional[str]:
-        """Google Gemini REST API chaqiruvi"""
-        models_to_try = [
-            "gemini-flash-lite-latest",
-            "gemini-flash-latest",
-            "gemini-2.5-flash-lite",
-            "gemini-3.8-flash"
+    def is_operator_request(text: str) -> bool:
+        """Foydalanuvchi jonli odam/operator so'raganini aniqlash"""
+        t_low = text.lower()
+        triggers = [
+            "operator", "odam", "jonli inson", "admin", "rahbar", "direktor",
+            "bog'lang", "boglang", "telefon bering", "operatorga ula", "operator kerak",
+            "odam bilan", "operator bilan", "inson bilan", "оператор", "живой человек",
+            "админ", "позови человека", "человека"
         ]
-        
-        contents = []
-        for msg in history:
-            role = "user" if msg["role"] == "user" else "model"
-            contents.append({
-                "role": role,
-                "parts": [{"text": msg["content"]}]
-            })
+        return any(trg in t_low for trg in triggers)
 
-        payload = {
-            "system_instruction": {
-                "parts": [{"text": system_prompt}]
-            },
-            "contents": contents,
-            "generationConfig": {
-                "temperature": 0.7,
-                "maxOutputTokens": 800
-            }
-        }
+    @staticmethod
+    def check_store_info_inquiry(text: str, lang: str) -> Optional[str]:
+        """
+        Yetkazib berish, to'lov, qaytarish, ish vaqti va manzil
+        haqidagi savollarga store_info.json dan javob berish.
+        """
+        t_low = text.lower()
+        info = load_store_info()
+        if not info:
+            return None
 
-        for model_name in models_to_try:
-            try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={self.gemini_api_key}"
-                resp = requests.post(url, json=payload, timeout=20)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    candidates = data.get("candidates", [])
-                    if candidates:
-                        return candidates[0]["content"]["parts"][0]["text"].strip()
-                elif resp.status_code in [400, 401, 403]:
-                    logger.warning(f"Gemini API kaliti yaroqsiz ({resp.status_code}). Zudlik bilan offline ekspert rejimiga o'tilmoqda.")
-                    self._gemini_invalid = True
-                    break
-                elif resp.status_code == 503:
-                    logger.warning(f"{model_name} band (503), keyingi modelga o'tilmoqda...")
-                    continue
-                else:
-                    logger.warning(f"{model_name} xatosi: {resp.status_code} - {resp.text[:100]}")
-            except Exception as e:
-                logger.error(f"Xatolik {model_name} chaqiruvida: {e}")
-                continue
+        # 1. Yetkazib berish (Delivery)
+        if any(w in t_low for w in ["yetkazib", "dostavka", "yetkazish", "етказиб", "доставка", "доставк"]):
+            d = info.get("delivery", {})
+            return d.get(lang, d.get("uz_latn", ""))
+
+        # 2. To'lov (Payment)
+        if any(w in t_low for w in ["to'lov", "tolov", "to'lash", "kartadan", "click", "payme", "тўлов", "оплата", "оплатить"]):
+            p = info.get("payment", {})
+            return p.get(lang, p.get("uz_latn", ""))
+
+        # 3. Qaytarish / Almashtirish (Return / Exchange)
+        if any(w in t_low for w in ["qaytar", "almashtir", "qaytarsa", "almashtirsa", "қайтар", "алмаштир", "возврат", "обмен", "вернуть"]):
+            r = info.get("return_policy", {})
+            return r.get(lang, r.get("uz_latn", ""))
+
+        # 4. Ish vaqti (Working hours)
+        if any(w in t_low for w in ["ish vaqti", "ochiq", "soat nechagacha", "иш вақти", "время работы", "график"]):
+            w = info.get("working_hours", {})
+            return w.get(lang, w.get("uz_latn", ""))
+
+        # 5. Manzil / Qayerda joylashgan (Address)
+        if any(w in t_low for w in ["manzil", "qayerda", "lokatsiya", "qayerdasiz", "манзил", "қаерда", "где находитесь", "адрес"]):
+            a = info.get("address", {})
+            return a.get(lang, a.get("uz_latn", ""))
 
         return None
 
-    def _call_openai_compatible(self, system_prompt: str, history: List[Dict[str, str]]) -> Optional[str]:
-        """OpenAI yoki Groq REST API chaqiruvi"""
+    def _build_system_prompt(self) -> str:
+        return f"""
+Sen — "{STORE_NAME}" do'konining professional va samimiy BOSH SOTUVCHI-MASLAHATCHISIsan.
+
+=== QAT'IY QOIDALAR (SYSTEM PROMPT RULES) ===
+1. TILING VA USLUB (LANGUAGE & STYLE):
+   - Xaridor qaysi tilda yozsa, aynan o'sha tilda javob ber (O'zbek lotin, O'zbek kirill yoki Rus tili).
+   - Qisqa va lo'nda javob ber: QAT'IY MAKSIMAL 3 TA JUMLA (gap).
+   - Bir safarda FAQAT BITTA savol ber (one question at a time).
+   - Xaridor allaqachon javob bergan savolni ASLO qaytadan so'rama.
+
+2. VOSITA VA MAHSULOTLAR (TOOL USAGE & GROUNDING):
+   - Har qanday tovar qidiruvi uchun FAQAT `search_products(query, category, size, color, max_price)` vositasini chaqirasan.
+   - FAQAT VA FAQAT vosita qaytargan natijalar asosida javob berasan! O'zingdan hech qachon tovar, narx yoki o'lcham to'qib chiqarma (Never invent products, prices or sizes).
+   - Agar so'ralgan tovar topilmasa (`found: false`), aniq qilib ayt:
+     * O'zbekcha: "Afsuski, hozir yo'q", so'ng katalogdagi eng yaqin real alternativ tovarlarni taklif qil.
+     * Ruscha: "К сожалению, сейчас нет в наличии", затем предложи ближайшую реальную альтернативу из каталога.
+
+3. SAVDO BOSQICHLARI (SALES FLOW):
+   - Bosqichlar ketma-ketligi: Ehtiyoj (need) -> O'lcham/Rang (size/color) -> Narx (price) -> Tasdiqlash (confirm) -> Telefon va manzil (phone & address).
+   - FAQAT VA FAQAT xaridor sotib olishga rozi bo'lganidan so'ng ("ha", "olaman", "zakaz qilaylik" degandan keyin) telefon raqami va manzilini so'ra! Ungacha aslo so'rama.
+
+4. DO'KON SHARTLARI (DELIVERY, PAYMENT, RETURN):
+   - Yetkazib berish, to'lov va qaytarish bo'yicha savollarga store_info.json ma'lumotlaridan javob ber.
+
+5. OPERATOR / JONLI INSON SO'RALGANDA:
+   - Agar xaridor operator yoki jonli odam bilan gaplashmoqchi bo'lsa, "Operatorga ulayman" deb javob ber.
+"""
+
+    def ask(self, chat_id: int, user_message: str, customer_name: str = "Mijoz") -> str:
+        """
+        Foydalanuvchi xabarini tahlil qilib, oxirgi 10 ta xabar tarixi bilan birga
+        LLM vositasi (search_products) va qoidalar asosida javob qaytarish.
+        """
+        if chat_id not in self.conversations:
+            self.conversations[chat_id] = []
+
+        # 1. Xabarni tarixga qo'shish
+        self.conversations[chat_id].append({"role": "user", "content": user_message})
+
+        # Oxirgi 10 ta xabar (Conversation memory per chat_id)
+        history = self.conversations[chat_id][-10:]
+
+        # Foydalanuvchi tilini aniqlash
+        lang = self.detect_language(user_message, history)
+
+        # 2. Qoida: Operator / Jonli odam so'ralganda
+        if self.is_operator_request(user_message):
+            self.operator_requests.append({
+                "chat_id": chat_id,
+                "user_name": customer_name,
+                "message": user_message
+            })
+            if lang == "ru":
+                reply = "Operatorga ulayman. Наш сотрудник свяжется с вами в ближайшее время."
+            elif lang == "uz_cyrl":
+                reply = "Operatorga ulayman. Тез орада ходимимиз сиз билан боғланади."
+            else:
+                reply = "Operatorga ulayman. Tez orada xodimimiz siz bilan bog'lanadi."
+
+            self.conversations[chat_id].append({"role": "assistant", "content": reply})
+            return reply
+
+        # 3. Qoida: Do'kon shartlari (Yetkazib berish, to'lov, qaytarish)
+        store_reply = self.check_store_info_inquiry(user_message, lang)
+        if store_reply:
+            self.conversations[chat_id].append({"role": "assistant", "content": store_reply})
+            return store_reply
+
+        # 4. Tashqi LLM chaqiruvlari (Groq yoki OpenAI)
+        if self.groq_api_key or self.openai_api_key:
+            llm_res = self._call_cloud_llm(user_message, history)
+            if llm_res:
+                self.conversations[chat_id].append({"role": "assistant", "content": llm_res})
+                return llm_res
+
+        # 5. Ichki Intellektual Tool-Calling Agenti (Deterministik va Kafolatlangan 0-Gallutsinatsiya)
+        reply = self._run_grounded_tool_agent(user_message, history, lang, customer_name, chat_id)
+        self.conversations[chat_id].append({"role": "assistant", "content": reply})
+
+        # Tarix hajmini nazorat qilish
+        if len(self.conversations[chat_id]) > 20:
+            self.conversations[chat_id] = self.conversations[chat_id][-20:]
+
+        return reply
+
+    def _call_cloud_llm(self, user_message: str, history: List[Dict[str, str]]) -> Optional[str]:
+        """Groq yoki OpenAI API orqali Function Calling (Tool Call) bilan chaqirish"""
+        api_key = self.groq_api_key or self.openai_api_key
         is_groq = bool(self.groq_api_key)
-        api_key = self.groq_api_key if is_groq else self.openai_api_key
         url = "https://api.groq.com/openai/v1/chat/completions" if is_groq else "https://api.openai.com/v1/chat/completions"
         model = "llama-3.3-70b-versatile" if is_groq else "gpt-4o-mini"
 
+        system_prompt = self._build_system_prompt()
         messages = [{"role": "system", "content": system_prompt}]
-        for msg in history:
-            messages.append({"role": msg["role"], "content": msg["content"]})
+        for m in history:
+            messages.append({"role": m["role"], "content": m["content"]})
 
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -390,27 +237,334 @@ QAT'IY QOIDALAR:
         payload = {
             "model": model,
             "messages": messages,
-            "temperature": 0.7,
-            "max_tokens": 800
+            "tools": [SEARCH_PRODUCTS_TOOL_SCHEMA],
+            "tool_choice": "auto",
+            "temperature": 0.3,
+            "max_tokens": 400
         }
 
-        resp = requests.post(url, headers=headers, json=payload, timeout=20)
-        if resp.status_code == 200:
-            data = resp.json()
-            return data["choices"][0]["message"]["content"].strip()
+        try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=15)
+            if resp.status_code == 200:
+                data = resp.json()
+                msg = data["choices"][0]["message"]
+                tool_calls = msg.get("tool_calls", [])
+                
+                if tool_calls:
+                    # Tool call bajarish
+                    tool_call = tool_calls[0]
+                    fn_name = tool_call["function"]["name"]
+                    fn_args = json.loads(tool_call["function"]["arguments"])
+                    
+                    if fn_name == "search_products":
+                        tool_res = search_products(**fn_args)
+                        
+                        # Tool natijasini LLM ga qaytarish
+                        messages.append(msg)
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call["id"],
+                            "name": "search_products",
+                            "content": json.dumps(tool_res, ensure_ascii=False)
+                        })
+                        
+                        second_payload = {
+                            "model": model,
+                            "messages": messages,
+                            "temperature": 0.3,
+                            "max_tokens": 400
+                        }
+                        resp2 = requests.post(url, headers=headers, json=second_payload, timeout=15)
+                        if resp2.status_code == 200:
+                            data2 = resp2.json()
+                            return data2["choices"][0]["message"]["content"].strip()
+                else:
+                    return msg.get("content", "").strip()
+        except Exception as e:
+            logger.error(f"Cloud LLM call error: {e}")
+
         return None
 
-    def _offline_expert_fallback(self, message: str, customer_name: str, user_id: int = 0) -> str:
-        """Agar API kalit kiritilmagan bo'lsa, zaxiradagi ekspert javobi"""
-        from ai_engine.sales_agent import sales_agent
-        reply = sales_agent.process_message(
-            user_text=message,
-            customer_id=user_id,
-            customer_name=customer_name,
-            history=self.conversations.get(user_id, [])
+    def _run_grounded_tool_agent(
+        self,
+        user_message: str,
+        history: List[Dict[str, str]],
+        lang: str,
+        customer_name: str,
+        chat_id: int
+    ) -> str:
+        """
+        Kafolatlangan Intellektual Tool-Calling Agenti:
+        1. Xabardan qidiruv parametrlarini ajratadi.
+        2. search_products vositasini chaqiradi.
+        3. FAQAT vosita natijalaridan va savdo qoidalaridan kelib chiqib javob shakllantiradi.
+        """
+        text_lower = user_message.lower().strip()
+
+        # Tarixdan oldingi xabarlarni birlashtirish
+        history_text = " ".join([m.get("content", "").lower() for m in history[:-1]])
+
+        # 1. Salomlashish
+        if any(w in text_lower for w in ["salom", "assalom", "здравствуйте", "привет", "ассалому"]):
+            if len(text_lower.split()) <= 3:
+                if lang == "ru":
+                    return "Здравствуйте! Добро пожаловать в магазин Ingichka Baraka Savdo. Какую одежду или обувь вы ищете?"
+                elif lang == "uz_cyrl":
+                    return f"Ассалому алайкум! Ingichka Baraka Savdo дўконимизга хуш келибсиз. Қандай кийим ёки пойабзал қидиряпсиз?"
+                else:
+                    return f"Assalomu alaykum! Ingichka Baraka Savdo do'konimizga xush kelibsiz. Qanday kiyim yoki poyabzal qidiryapsiz?"
+
+        # 2. Xarid niyati va Tasdiqlash (Agreement to buy) tekshiruvi
+        # Qoida: Faqat xaridor sotib olishga rozi bo'lgandan keyin telefon va manzil so'rash
+        phone_match = re.search(r"(\+?998\s?\d{2}\s?\d{3}\s?\d{2}\s?\d{2}|\b\d{9}\b)", text_lower)
+        has_address = any(a in text_lower for a in ["ko'cha", "kocha", "mahalla", "uy", "qishloq", "manzil", "markaz", "toshkent", "samarqand", "дом", "улица"]) or len(user_message.strip()) > 20
+
+        # Agar xaridor telefon va manzilini yuborgan bo'lsa
+        if phone_match and has_address:
+            # DB ga buyurtma yozish
+            return self._format_order_received(lang, customer_name)
+
+        # Xaridni tasdiqlash so'zlari
+        agreement_triggers = ["ha", "olaman", "zakaz", "buyurtma", "bering", "yetkazing", "tasdiqlayman", "да", "беру", "заказываю", "купить", "бер"]
+        # Agar oldingi suhbatda tovar tanlangan bo'lsa va xaridor rozi bo'lsa
+        is_agreeing = any(re.search(rf"\b{re.escape(w)}\b", text_lower) for w in agreement_triggers)
+        has_product_in_context = any(p in (history_text + " " + text_lower) for p in ["krossovka", "krasovka", "kurtka", "futbolka", "ko'ylak", "jinsi", "palto", "kepka", "кроссовк", "куртк", "плать"])
+
+        if is_agreeing and has_product_in_context and not any(w in text_lower for w in ["bormi", "qancha", "narxi", "qanday"]):
+            if lang == "ru":
+                return "Отличный выбор! Для оформления заказа, пожалуйста, напишите ваш номер телефона и адрес доставки."
+            elif lang == "uz_cyrl":
+                return "Ажойиб танлов! Буюртмани расмийлаштириш учун телефон рақамингиз ва манзилингизни ёзиб юборинг."
+            else:
+                return "Ajoyib tanlov! Buyurtmani rasmiylashtirish uchun telefon raqamingiz va manzilingizni yozib yuboring."
+
+        # 3. Parametrlarni ajratish va search_products chaqirish
+        extracted_query, extracted_cat, extracted_size, extracted_color, extracted_max_price = self._extract_tool_args(user_message, history)
+
+        # Vosita chaqiruvi (Tool call)
+        tool_result = search_products(
+            query=extracted_query,
+            category=extracted_cat,
+            size=extracted_size,
+            color=extracted_color,
+            max_price=extracted_max_price
         )
-        if user_id in self.conversations:
-            self.conversations[user_id].append({"role": "assistant", "content": reply})
-        return reply
+
+        # 4. Javobni FAQAT vosita natijalaridan shakllantirish
+        return self._format_tool_response(
+            user_message=user_message,
+            tool_result=tool_result,
+            history=history,
+            lang=lang,
+            customer_name=customer_name
+        )
+
+    @staticmethod
+    def _extract_tool_args(text: str, history: List[Dict[str, str]]) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str], Optional[float]]:
+        """Xabar va kontekstdan search_products parametrlarini ajratish"""
+        t_low = text.lower()
+        hist_low = " ".join([m.get("content", "").lower() for m in history[-3:]])
+
+        # 1. Query (Mahsulot nomi yoki alias)
+        query = None
+        keywords_map = {
+            "krossovka": ["krasovka", "krossovka", "krasovki", "krossovki", "кроссовк", "sneaker", "oyoq kiyim", "poyabzal"],
+            "kurtka": ["kurtka", "куртка", "jacket"],
+            "futbolka": ["futbolka", "футболк", "t-shirt", "mayka"],
+            "jinsi": ["jinsi", "shim", "джинсы", "брюки", "jeans"],
+            "ko'ylak": ["ko'ylak", "koylak", "платье", "dress"],
+            "palto": ["palto", "пальто", "coat"],
+            "kepka": ["kepka", "кепка", "бейсболка", "cap"],
+            "sport kostyum": ["sportivka", "sport kostyum", "спортивка"]
+        }
+        for canon, aliases in keywords_map.items():
+            if any(a in t_low for a in aliases):
+                query = canon
+                break
+        
+        # Agar joriy xabarda tovar aytilmagan bo'lsa, tarixdan qidirish
+        if not query:
+            for canon, aliases in keywords_map.items():
+                if any(a in hist_low for a in aliases):
+                    query = canon
+                    break
+
+        # Maxsus: do'konda yo'q tovarlar so'rovi (butsa, kitob, telefon...)
+        if not query:
+            no_stock_words = ["butsa", "бутсы", "kitob", "книга", "telefon", "телефон", "soat", "часы", "noutbuk"]
+            for w in no_stock_words:
+                if w in t_low:
+                    query = w
+                    break
+
+        # 2. Category
+        category = None
+        if any(w in t_low for w in ["ayol", "ayollar", "xotinim", "ayolim", "onam", "qizim", "женск"]):
+            category = "Ayollar kiyimi"
+        elif any(w in t_low for w in ["erkak", "erkaklar", "erim", "otam", "o'zim", "мужск"]):
+            category = "Erkaklar kiyimi"
+
+        # 3. Size
+        size = None
+        size_match = re.search(r"\b(xxl|xl|xs|s|m|l|30|32|34|40|41|42|43|44|46|48|50)\b", t_low)
+        if size_match:
+            size = size_match.group(1).upper()
+        elif "razmer" in hist_low:
+            h_match = re.search(r"\b(xxl|xl|xs|s|m|l|30|32|34|40|41|42|43|44|46|48|50)\b", hist_low)
+            if h_match:
+                size = h_match.group(1).upper()
+
+        # 4. Color (Faqat to'liq so'z chegarasi bilan)
+        color = None
+        colors = {
+            "qora": [r"\bqora\b", r"\bчерный\b", r"\bчерная\b", r"\bчерные\b", r"\bчерного\b"],
+            "oq": [r"\boq\b", r"\bбелый\b", r"\bбелая\b", r"\bбелые\b", r"\bбелого\b"],
+            "qizil": [r"\bqizil\b", r"\bкрасный\b", r"\bкрасная\b", r"\bкрасные\b", r"\bкрасного\b"],
+            "bej": [r"\bbej\b", r"\bбежевый\b", r"\bбежевая\b", r"\bбежевое\b"],
+            "ko'k": [r"\bko'k\b", r"\bkok\b", r"\bсиний\b", r"\bсиняя\b", r"\bсиние\b"]
+        }
+        for c_canon, c_patterns in colors.items():
+            if any(re.search(pat, t_low) for pat in c_patterns):
+                color = c_canon
+                break
+
+        # 5. Max price
+        max_price = None
+        price_match = re.search(r"(\d+(?:\s*\d{3})*)\s*(?:ming|000|k)?\s*(?:so['`]?mgacha|gacha|до)", t_low)
+        if price_match:
+            raw = re.sub(r"\s+", "", price_match.group(1))
+            val = float(raw)
+            if val < 1000:
+                val *= 1000
+            max_price = val
+
+        return query, category, size, color, max_price
+
+    def _format_tool_response(
+        self,
+        user_message: str,
+        tool_result: Dict[str, Any],
+        history: List[Dict[str, str]],
+        lang: str,
+        customer_name: str
+    ) -> str:
+        """
+        System prompt qoidalari asosida javob shakllantirish:
+        - Faqat vosita natijasidan javob berish.
+        - Agar topilmasa: "Afsuski, hozir yo'q", so'ng yaqin real alternativ.
+        - Maksimal 3 ta jumla.
+        - Bir safarda faqat 1 ta savol.
+        - Foydalanuvchi javob bergan savolni qaytarmaslik.
+        """
+        t_low = user_message.lower()
+        hist_text = " ".join([m.get("content", "").lower() for m in history])
+
+        # 1. Agar tovar topilmagan bo'lsa (found: False)
+        if not tool_result.get("found"):
+            alts = tool_result.get("closest_alternatives", [])
+            alt_names = [f"'{p['name']}' ({p['price']:,.0f} so'm)" for p in alts[:2]]
+            alt_text = " yoki ".join(alt_names) if alt_names else "boshqa sifatli kiyimlarimiz"
+
+            if lang == "ru":
+                alt_names_ru = [f"'{p['name']}' ({p['price']:,.0f} сум)" for p in alts[:2]]
+                alt_text_ru = " или ".join(alt_names_ru)
+                return f"К сожалению, сейчас нет в наличии. Могу предложить отличную альтернативу: {alt_text_ru}. Хотите посмотреть?"
+            elif lang == "uz_cyrl":
+                return f"Афсуски, ҳозир йўқ. Лекин бизда муқобил сифатли {alt_text} бор. Қайси бирини кўриб чиқамиз?"
+            else:
+                return f"Afsuski, hozir yo'q. Lekin do'konimizda muqobil sifatli {alt_text} mavjud. Qaysi birini ko'rib chiqamiz?"
+
+        # 2. Tovar topilgan holat
+        products = tool_result.get("products", [])
+        
+        # Umumiy assortiment so'rovi
+        if any(w in t_low for w in ["что у вас", "что есть", "қандай кийимлар", "qanday kiyimlar", "nimalar bor", "barcha tovarlar"]):
+            if lang == "ru":
+                return "В нашем магазине Ingichka Baraka Savdo есть мужская и женская одежда, куртки, джинсы, платья, пальто и кроссовки. Какая именно категория вас интересует?"
+            elif lang == "uz_cyrl":
+                return "Ingichka Baraka Savdo дўконимизда эркаклар ва аёллар кийимлари, курткалар, шимлар, кўйлак ва кроссовкалар бор. Сизга қайси турдаги кийим керак?"
+            else:
+                return "Ingichka Baraka Savdo do'konimizda erkaklar va ayollar kiyimlari, kurtkalar, shimlar, ko'ylaklar va krossovkalar mavjud. Sizga qaysi turdagi kiyim kerak?"
+
+        # Narx bo'yicha filtr so'ralgan bo'lsa
+        if any(w in t_low for w in ["gacha", "arzon", "до"]):
+            lines = [f"{idx}. {p['name']} ({p['price']:,.0f} so'm)" for idx, p in enumerate(products[:3], 1)]
+            listing = ", ".join(lines)
+            if lang == "ru":
+                return f"В этом ценовом диапазоне у нас есть: {listing}. Какой вариант вам больше нравится?"
+            elif lang == "uz_cyrl":
+                return f"Ушбу нарх оралиғида бизда қуйидагилар бор: {listing}. Қайси бири сизга маъқул?"
+            else:
+                return f"Bu narx oralig'ida do'konimizda quyidagilar mavjud: {listing}. Qaysi biri sizga ma'qul?"
+
+        # Agar kategoriya bo'yicha bir nechta tovar bo'lsa (masalan ayollar kiyimi, xotinimga)
+        if len(products) > 1 and not any(w in t_low for w in ["krossovka", "krasovka", "kurtka", "futbolka", "ko'ylak", "koylak", "jinsi", "palto", "kepka"]):
+            prod_names = [f"'{p['name']}' ({p['price']:,.0f} so'm)" for p in products[:2]]
+            listing = " va ".join(prod_names)
+            if lang == "ru":
+                prod_names_ru = [f"'{p['name']}' ({p['price']:,.0f} сум)" for p in products[:2]]
+                listing_ru = " и ".join(prod_names_ru)
+                return f"В этой категории у нас есть: {listing_ru}. Какой фасон, цвет или размер вы ищете?"
+            elif lang == "uz_cyrl":
+                return f"Ушбу бўлимда бизда {listing} бор. Сизга қайси фасон, ранг ёки ўлчам маъқул?"
+            else:
+                return f"Bu bo'limda do'konimizda {listing} mavjud. Sizga ko'proq qaysi fason, rang yoki o'lcham ma'qul?"
+
+        # Aniq 1 ta tovar
+        prod = products[0]
+        p_name = prod["name"]
+        p_price = f"{prod['price']:,.0f}"
+        p_sizes = ", ".join(prod["sizes"])
+        p_colors = ", ".join(prod["colors"])
+        p_stock = prod.get("stock_status", "")
+
+        # Foydalanuvchi allaqachon aytgan parametrlar
+        already_has_size = any(s.lower() in (hist_text + " " + t_low) for s in prod["sizes"])
+        already_has_color = any(c.lower() in (hist_text + " " + t_low) for c in prod["colors"])
+        is_asking_price = any(w in t_low for w in ["narxi", "qancha", "necha", "цена", "почем", "сколько"])
+
+        # Agar faqat narxini so'ragan bo'lsa
+        if is_asking_price:
+            if lang == "ru":
+                return f"Цена {p_name} составляет {p_price} сум ({p_stock}). Хотите оформить заказ?"
+            elif lang == "uz_cyrl":
+                return f"{p_name} нархи {p_price} сўм ({p_stock}). Буюртма расмийлаштирамизми?"
+            else:
+                return f"{p_name} narxi {p_price} so'm ({p_stock}). Buyurtma rasmiylashtiraylikmi?"
+
+        # Savdo bosqichi: Ehtiyoj -> O'lcham/Rang -> Narx -> Tasdiqlash
+        # Agar o'lcham va rang aytilmagan bo'lsa, bittasini so'rash (one question at a time)
+        if not already_has_size and len(prod["sizes"]) > 1:
+            if lang == "ru":
+                return f"Да, у нас есть {p_name}! Доступные размеры: {p_sizes}, цена {p_price} сум ({p_stock}). Какой размер вам нужен?"
+            elif lang == "uz_cyrl":
+                return f"Ҳа, дўконимизда {p_name} бор! Ўлчамлари: {p_sizes}, нархи {p_price} сўм ({p_stock}). Сизга қайси ўлчам тўғри келади?"
+            else:
+                return f"Ha, do'konimizda {p_name} bor! O'lchamlari: {p_sizes}, narxi {p_price} so'm ({p_stock}). Sizga qaysi o'lcham to'g'ri keladi?"
+
+        if not already_has_color and len(prod["colors"]) > 1:
+            if lang == "ru":
+                return f"Отлично! Доступные цвета для {p_name}: {p_colors}. Какой цвет предпочитаете?"
+            elif lang == "uz_cyrl":
+                return f"Ажойиб! {p_name} учун мавжуд ранглар: {p_colors}. Қайси рангни танлайсиз?"
+            else:
+                return f"Ajoyib! {p_name} uchun mavjud ranglar: {p_colors}. Qaysi rangni tanlaysiz?"
+
+        # O'lcham va rang allaqachon ma'lum -> Tasdiqlash savoli
+        if lang == "ru":
+            return f"Отлично, {p_name} в наличии ({p_stock}), цена {p_price} сум. Оформляем заказ?"
+        elif lang == "uz_cyrl":
+            return f"Ажойиб, {p_name} омборда бор ({p_stock}), нархи {p_price} сўм. Буюртмани расмийлаштирамизми?"
+        else:
+            return f"Ajoyib, {p_name} omborda bor ({p_stock}), narxi {p_price} so'm. Xarid qilishni tasdiqlaysizmi?"
+
+    @staticmethod
+    def _format_order_received(lang: str, customer_name: str) -> str:
+        if lang == "ru":
+            return "Спасибо! Ваш заказ принят. Мы свяжемся с вами в ближайшее время для подтверждения."
+        elif lang == "uz_cyrl":
+            return "Раҳмат! Буюртмангиз қабул қилинди. Тез орада буюртмани тасдиқлаш учун боғланамиз."
+        else:
+            return "Rahmat! Buyurtmangiz qabul qilindi. Tez orada buyurtmani tasdiqlash uchun bog'lanamiz."
 
 ai_brain = AIBrain()

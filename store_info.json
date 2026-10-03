@@ -1,0 +1,32 @@
+{
+  "store_name": "Ingichka Baraka Savdo",
+  "delivery": {
+    "uz_latn": "Yetkazib berish xizmati shahar bo'ylab 1 soatda yetkaziladi. Viloyatlarga BTS pochta orqali 1-2 kunda yetkazib beriladi.",
+    "uz_cyrl": "Етказиб бериш хизмати шаҳар бўйлаб 1 соатда етказилади. Вилоятларга BTS почта орқали 1-2 кунда етказиб берилади.",
+    "ru": "Доставка по городу осуществляется в течение 1 часа. В другие регионы отправляем через BTS почту за 1-2 дня."
+  },
+  "payment": {
+    "uz_latn": "To'lovni mahsulotni qabul qilib olganingizdan so'ng qilasiz (naqd yoki Payme/Click). Oldindan to'lov olinmaydi.",
+    "uz_cyrl": "Тўловни маҳсулотни қабул қилиб олганингиздан сўнг қиласиз (нақд ёки Payme/Click). Олдиндан тўлов олинмайди.",
+    "ru": "Оплата при получении товара (наличными или через Payme/Click). Предоплаты нет."
+  },
+  "return_policy": {
+    "uz_latn": "Agar o'lcham yoki fason to'g'ri kelmasa, 24 soat ichida kiyilmagan holatda bepul almashtirib beriladi yoki pulingiz qaytariladi.",
+    "uz_cyrl": "Агар ўлчам ёки фасон тўғри келмаса, 24 соат ичида кийилмаган ҳолатда бепул алмаштириб берилади ёки пулингиз қайтарилади.",
+    "ru": "Если размер или фасон не подошел, в течение 24 часов можно бесплатно обменять или вернуть товар в неношеном виде."
+  },
+  "working_hours": {
+    "uz_latn": "Har kuni soat 09:00 dan 21:00 gacha dam olish kunlarisiz ishlaymiz.",
+    "uz_cyrl": "Ҳар куни соат 09:00 дан 21:00 гача дам олиш кунларисиз ишлаймиз.",
+    "ru": "Работаем ежедневно с 09:00 до 21:00 без выходных."
+  },
+  "address": {
+    "uz_latn": "Samarqand viloyati, Kattaqo'rg'on shahar, Ingichka qo'rg'oni, Markaziy savdo majmuasi.",
+    "uz_cyrl": "Самарқанд вилояти, Каттақўрғон шаҳар, Ингичка қўрғони, Марказий савдо мажмуаси.",
+    "ru": "Самаркандская область, г. Каттакурган, поселок Ингичка, Центральный торговый комплекс."
+  },
+  "contact": {
+    "phone": "97 913-36-86",
+    "admin": "@sanobarruziyeva"
+  }
+}

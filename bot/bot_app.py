@@ -1130,155 +1130,61 @@ async def handle_private_chat(message: types.Message):
     except Exception:
         pass
 
-    # === DO'KON SOZLAMALARI VA QAT'IY QOIDALAR TEKSHIRUVI (KOD DARAJASIDA) ===
-    # 0. Do'kon sozlamalari (delivery, discount, address)
-    setting_inq = StoreSettingsManager.check_setting_inquiry(text)
-    if setting_inq:
-        await safe_send(message.chat.id, setting_inq["reply"])
-        if setting_inq["empty"]:
-            alert_text = (
-                f"⚠️ **Do'kon sozlamasi so'rovi ({setting_inq['setting_name_uz']}):**\n\n"
-                f"👤 Mijoz: {user_name} (ID: `{user_id}`)\n"
-                f"💬 Xabar: {text}\n\n"
-                f"Ushbu sozlama kiritilmagan (bo'sh) bo'lgani sababli mijozga 'Buni egasidan so'rab aytaman' deyildi."
-            )
-            for aid in ADMIN_TELEGRAM_IDS:
-                try:
-                    await safe_send(aid, alert_text)
-                except Exception:
-                    pass
-        return
-
-    # 1. Qoida 7: Mavjud bo'lmagan o'lcham
-    size_inq = OrderMatcher.check_size_inquiry(text)
-    if size_inq:
-        await safe_send(message.chat.id, size_inq)
-        return
-
-    # 2. Qoida 5: Jami summani kod hisoblashi (Quote)
-    quote_res = OrderMatcher.calculate_quote(text)
-    if quote_res:
-        await safe_send(message.chat.id, quote_res)
-        return
-
-    # 3. Qoida 4: Narx bo'yicha filtr (kod filtrlaydi, AI emas)
-    price_filt = OrderMatcher.parse_price_filter(text)
-    if price_filt:
-        prods = OrderMatcher.filter_products_by_price(price_filt["min_price"], price_filt["max_price"])
-        reply_filt = OrderMatcher.format_price_filter_response(prods, price_filt["min_price"], price_filt["max_price"])
-        await safe_send(message.chat.id, reply_filt)
-        return
-
-    # === BUYURTMANI TO'LIQ ANIQ VA XATOSIZ RASMIYLASHTIRISH ===
-    has_pending = bool(get_pending_order(user_id))
-    order_details = OrderMatcher.extract_order_details(text, has_pending_order=has_pending)
-
-    if order_details:
-        target_prod = OrderMatcher.match_product(
-            text=text,
-            history=ai_brain.conversations.get(user_id, []),
-            pending_product=get_pending_order(user_id)
-        )
-
-        if target_prod:
-            stock_check = DatabaseManager.check_stock_strict(target_prod["id"], 1)
-            if not stock_check["available"]:
-                await safe_send(
-                    chat_id=message.chat.id,
-                    text=(
-                        f"Kechirasiz, {user_name}! Siz tanlagan **'{target_prod['name']}'** tovarimiz ayni daqiqada tugab qoldi.\n\n"
-                        f"Lekin omborimizda xuddi shunday ajoyib boshqa modellar bor! Quyidagi bo'limlardan ko'rishingiz mumkin 👇"
-                    ),
-                    reply_markup=get_category_keyboard()
-                )
-                clear_pending_order(user_id)
-                return
-
-            order_res = DatabaseManager.create_order(
-                customer_telegram_id=user_id,
-                customer_name=user_name,
-                customer_phone=order_details["phone"],
-                delivery_address=order_details["address"],
-                items=[{"product_id": target_prod["id"], "quantity": 1}],
-                payment_method="cash_on_delivery",
-                notes=f"Matnli buyurtma: {text[:150]}"
-            )
-
-            if order_res["success"]:
-                new_order_id = order_res["order_id"]
-                clear_pending_order(user_id)
-
-                # Xaridorga rasmiy chek
-                confirm_msg = OrderMatcher.format_order_confirmation(
-                    order_id=new_order_id,
-                    product=target_prod,
-                    user_name=user_name,
-                    phone=order_details["phone"],
-                    address=order_details["address"]
-                )
-                await safe_send(message.chat.id, confirm_msg)
-
-                # Do'kon egasiga (Admin) push xabarnoma!
-                admin_alert = OrderMatcher.format_admin_alert(
-                    order_id=new_order_id,
-                    product=target_prod,
-                    user_name=user_name,
-                    phone=order_details["phone"],
-                    address=order_details["address"],
-                    full_raw=text
-                )
-                for admin_id in ADMIN_TELEGRAM_IDS:
-                    try:
-                        await safe_send(
-                            chat_id=admin_id,
-                            text=admin_alert,
-                            reply_markup=get_order_action_keyboard(new_order_id)
-                        )
-                    except Exception:
-                        pass
-                return
-        else:
-            await safe_send(
-                chat_id=message.chat.id,
-                text=(
-                    f"Rahmat, {user_name}! Telefoningiz (`{order_details['phone']}`) va manzilingizni qabul qildim.\n\n"
-                    f"Aynan qaysi tovarimizni yetkazib beraylik? Iltimos, tovar nomini yozing yoki katalogdan tanlang 👇"
-                ),
-                reply_markup=get_category_keyboard()
-            )
-            return
-
-    # Agar xaridor "olaman", "bering" deb tovar tanlasa, lekin hali telefon/manzil bermagan bo'lsa
-    matched_prod_intent = OrderMatcher.match_product(text, history=ai_brain.conversations.get(user_id, []))
-    if matched_prod_intent and any(w in text_lower for w in ["olaman", "olmoqchiman", "bering", "zakaz", "buyurtma", "yetkazing", "olib keling", "sotib olaman"]):
-        set_pending_order(user_id, matched_prod_intent)
-
-    # Knopkalarni FAQAT mijoz aniq katalog yoki bo'limlar knopkasini so'raganda chiqaramiz!
-    explicit_catalog = any(k in text_lower for k in ["katalog", "bo'limlar", "kategoriyalar", "barcha tovarlar", "bo'limlarni ko'rsat", "katalog knopkalari"])
-    reply_kb = get_category_keyboard() if explicit_catalog else None
-
-    # Katta AI Agent (Gemini) javobi
+    # === ASOSIY OQIM: Barcha xabarlar LLM ga boradi (oxirgi 10 ta xabar xotirasi bilan) ===
     response = ai_brain.ask(
-        user_id=user_id,
+        chat_id=message.chat.id,
         user_message=text,
         customer_name=user_name
     )
 
-    # Agar AI "Buni egasidan so'rab aytaman" deb javob bersa, egasiga darhol xabar yuborish
-    if "buni egasidan so'rab aytaman" in response.lower() or "buni egasidan sorab aytaman" in response.lower():
-        alert_text = (
-            f"⚠️ **Do'kon sozlamalari bo'yicha mijoz savoli:**\n\n"
-            f"👤 Mijoz: {user_name} (ID: `{user_id}`)\n"
-            f"💬 Xabar: {text}\n\n"
-            f"Bot mijozga 'Buni egasidan so'rab aytaman' deb javob qaytardi."
+    # 1. Agar foydalanuvchi jonli operator so'ragan bo'lsa, adminga darhol bildirishnoma
+    if "operatorga ulayman" in response.lower():
+        admin_alert = (
+            f"🔔 **Mijoz jonli operator / adminga ulanishni so'radi!**\n\n"
+            f"👤 **Mijoz:** {user_name} (ID: `{user_id}`)\n"
+            f"📱 **Username:** @{message.from_user.username or 'mavjud_emas'}\n"
+            f"💬 **Xabar:** {text}"
         )
         for aid in ADMIN_TELEGRAM_IDS:
             try:
-                await safe_send(aid, alert_text)
+                await safe_send(aid, admin_alert)
             except Exception:
                 pass
 
-    await safe_send(message.chat.id, response, reply_markup=reply_kb)
+    # 2. Agar xaridor buyurtma tafsilotlarini (telefon va manzil) yuborgan bo'lsa, DB ga yozish
+    phone_match = re.search(r"(\+?998\s?\d{2}\s?\d{3}\s?\d{2}\s?\d{2}|\b\d{9}\b)", text_lower)
+    if phone_match and len(text.strip()) > 15:
+        try:
+            target_prod = OrderMatcher.match_product(text, history=ai_brain.conversations.get(message.chat.id, []))
+            if target_prod:
+                order_res = DatabaseManager.create_order(
+                    customer_telegram_id=user_id,
+                    customer_name=user_name,
+                    customer_phone=phone_match.group(0),
+                    delivery_address=text,
+                    items=[{"product_id": target_prod["id"], "quantity": 1}],
+                    payment_method="cash_on_delivery",
+                    notes=f"LLM buyurtmasi: {text[:150]}"
+                )
+                if order_res.get("success"):
+                    admin_order_alert = (
+                        f"🚨 **YANGI BUYURTMA TUSHDI!**\n\n"
+                        f"👤 **Xaridor:** {user_name}\n"
+                        f"🛍️ **Mahsulot:** {target_prod['name']}\n"
+                        f"💰 **Narxi:** {target_prod['sale_price']:,.0f} so'm\n"
+                        f"📞 **Telefon:** {phone_match.group(0)}\n"
+                        f"📍 **Manzil:** {text}"
+                    )
+                    for aid in ADMIN_TELEGRAM_IDS:
+                        try:
+                            await safe_send(aid, admin_order_alert)
+                        except Exception:
+                            pass
+        except Exception as e:
+            logger.error(f"Avtomatik buyurtma qaydida xatolik: {e}")
+
+    # Qoida 5: Menyu tugmalari FAQAT /start da chiqadi, savollarga javobda tugma qo'yilmaydi (reply_markup=None)
+    await safe_send(message.chat.id, response, reply_markup=None)
 
 
 from aiohttp import web
