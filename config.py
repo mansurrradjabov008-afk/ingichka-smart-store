@@ -53,10 +53,10 @@ ADMIN_TELEGRAM_IDS = [int(i) for i in os.getenv("ADMIN_TELEGRAM_IDS", "0").split
 ADMIN_USERNAMES = ["sanobarruziyeva"]
 
 # AI Configuration
-_FALLBACK_GEMINI_KEY = base64.b64decode("QVEuQWI4Uk42SjNpYjNFc0Z4LVloSnJrbGYxTkE0bDJ3VFgzQXpKYWVBVV9COVgwT0huNEE=").decode()
+_FALLBACK_GEMINI_KEY = base64.b64decode("QVEuQWI4Uk42Sm0tc0g5NFJHYWxfd2ZvYjd6bzhZZUdFSnJPZERNNVR6ZElhWnVuY3VmMGc=").decode()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or _FALLBACK_GEMINI_KEY
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-AI_MODEL = "gemini-flash-lite-latest"
+AI_MODEL = "gemini-3.5-flash"
 CRISIS_THRESHOLD_DROP_PCT = 25.0
 LOW_STOCK_THRESHOLD = 2 # Qoida 3: stock <= 2

@@ -201,14 +201,21 @@ Sen — "{STORE_NAME}" do'konining professional va samimiy BOSH SOTUVCHI-MASLAHA
             self.conversations[chat_id].append({"role": "assistant", "content": store_reply})
             return store_reply
 
-        # 4. Tashqi LLM chaqiruvlari (Groq yoki OpenAI)
+        # 4. Google Gemini chaqiruvi (Haqiqiy Gemini 3.5/3.6/3.8 Flash modeli)
+        if self.gemini_api_key and not getattr(self, '_gemini_invalid', False):
+            gemini_res = self._call_gemini(user_message, history, lang)
+            if gemini_res:
+                self.conversations[chat_id].append({"role": "assistant", "content": gemini_res})
+                return gemini_res
+
+        # 5. Tashqi LLM chaqiruvlari (Groq yoki OpenAI)
         if self.groq_api_key or self.openai_api_key:
             llm_res = self._call_cloud_llm(user_message, history)
             if llm_res:
                 self.conversations[chat_id].append({"role": "assistant", "content": llm_res})
                 return llm_res
 
-        # 5. Ichki Intellektual Tool-Calling Agenti (Deterministik va Kafolatlangan 0-Gallutsinatsiya)
+        # 6. Ichki Intellektual Tool-Calling Agenti (Deterministik va Kafolatlangan 0-Gallutsinatsiya)
         reply = self._run_grounded_tool_agent(user_message, history, lang, customer_name, chat_id)
         self.conversations[chat_id].append({"role": "assistant", "content": reply})
 
@@ -217,6 +224,92 @@ Sen — "{STORE_NAME}" do'konining professional va samimiy BOSH SOTUVCHI-MASLAHA
             self.conversations[chat_id] = self.conversations[chat_id][-20:]
 
         return reply
+
+    def _call_gemini(self, user_message: str, history: List[Dict[str, str]], lang: str) -> Optional[str]:
+        """Google Gemini API (gemini-3.5-flash, gemini-3.6-flash, gemini-3.8-flash) chaqiruvi"""
+        if not self.gemini_api_key:
+            return None
+
+        products = load_products()
+        store_info = load_store_info()
+        catalog_str = json.dumps(products, ensure_ascii=False, indent=2)
+        store_str = json.dumps(store_info, ensure_ascii=False, indent=2)
+
+        system_instruction = f"""Sen — "{STORE_NAME}" do'konining professional va samimiy BOSH SOTUVCHI-MASLAHATCHISIsan.
+
+=== QAT'IY QOIDALAR (SYSTEM PROMPT RULES) ===
+1. TILING VA USLUB (LANGUAGE & STYLE):
+   - Xaridor qaysi tilda yozsa, aynan o'sha tilda javob ber (O'zbek lotin, O'zbek kirill yoki Rus tili).
+   - Qisqa va lo'nda javob ber: QAT'IY MAKSIMAL 3 TA JUMLA (gap).
+   - Bir safarda FAQAT BITTA savol ber (one question at a time).
+   - Xaridor allaqachon javob bergan savolni ASLO qaytadan so'rama.
+
+2. VOSITA VA MAHSULOTLAR (GROUNDING):
+   - FAQAT VA FAQAT quyidagi do'kon katalogida (products.json) bor tovarlar, narxlar va o'lchamlar asosida javob berasan! O'zingdan hech qachon tovar, narx yoki o'lcham to'qib chiqarma (Never invent products, prices or sizes).
+   - Agar so'ralgan tovar bo'lmasa, aniq qilib ayt:
+     * O'zbekcha: "Afsuski, hozir yo'q", so'ng katalogdagi eng yaqin real muqobilni taklif qil.
+     * Ruscha: "К сожалению, сейчас нет в наличии", затем предложи ближайшую реальную альтернативу из каталога.
+
+3. SAVDO BOSQICHLARI (SALES FLOW):
+   - Bosqichlar: Ehtiyoj (need) -> O'lcham/Rang (size/color) -> Narx (price) -> Tasdiqlash (confirm) -> Telefon va manzil (phone & address).
+   - FAQAT VA FAQAT xaridor sotib olishga rozi bo'lganidan so'ng ("ha", "olaman", "zakaz qilaylik" degandan keyin) telefon raqami va manzilini so'ra! Ungacha aslo so'rama.
+
+4. DO'KON SHARTLARI (store_info.json):
+   - Yetkazib berish, to'lov va qaytarish bo'yicha savollarga do'kon shartlaridan javob ber.
+
+5. OPERATOR / JONLI INSON SO'RALGANDA:
+   - "Operatorga ulayman" deb javob ber.
+
+DO'KON MAHSULOTLARI (products.json):
+{catalog_str}
+
+DO'KON SHARTLARI (store_info.json):
+{store_str}
+"""
+
+        # Format history for Gemini API
+        contents = []
+        for m in history:
+            role = "user" if m.get("role") == "user" else "model"
+            text_part = m.get("content", "").strip()
+            if text_part:
+                contents.append({"role": role, "parts": [{"text": text_part}]})
+
+        if not contents:
+            contents = [{"role": "user", "parts": [{"text": user_message}]}]
+
+        payload = {
+            "system_instruction": {"parts": [{"text": system_instruction}]},
+            "contents": contents,
+            "generationConfig": {
+                "temperature": 0.3,
+                "maxOutputTokens": 350
+            }
+        }
+
+        models_to_try = ["gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.8-flash"]
+        for model_name in models_to_try:
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={self.gemini_api_key}"
+                resp = requests.post(url, json=payload, timeout=12)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    candidates = data.get("candidates", [])
+                    if candidates and "content" in candidates[0]:
+                        parts = candidates[0]["content"].get("parts", [])
+                        if parts and "text" in parts[0]:
+                            return parts[0]["text"].strip()
+                elif resp.status_code in [400, 401, 403]:
+                    logger.warning(f"Gemini API key error ({resp.status_code}): {resp.text[:100]}")
+                    break
+                elif resp.status_code == 503:
+                    logger.warning(f"{model_name} busy (503), trying next model...")
+                    continue
+            except Exception as e:
+                logger.error(f"Error calling {model_name}: {e}")
+                continue
+
+        return None
 
     def _call_cloud_llm(self, user_message: str, history: List[Dict[str, str]]) -> Optional[str]:
         """Groq yoki OpenAI API orqali Function Calling (Tool Call) bilan chaqirish"""
