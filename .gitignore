@@ -10,6 +10,8 @@ test_*.mp3
 test_*.ogg
 tests/__pycache__/
 .bot_supervisor.pid
+.bot_sentinel.pid
+*.pid
 logs/
 scratch/
 reports/*.xlsx

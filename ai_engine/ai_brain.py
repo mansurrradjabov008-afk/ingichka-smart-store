@@ -86,15 +86,22 @@ Isming — Madinaxon (yoki Madina).
    - Faqat tovar, narx yoki o'lcham so'rayotgan mijozga faqat uning so'rovi bo'yicha maslahat ber.
    - Faqat va faqat mijoz ochiq xarid niyatini bildirganidagina manzil va telefonini so'ra.
 
-3. JAVOB HAJMI VA USLUBI (QOIDA 2):
+3. MASLAHATCHI VA KONSULTATIV SOTUVCHI STANDARTI:
+   - Agar mijoz umumiy kiyim (masalan "ayollar kiyimi", "xotinimga", "ayolimga", "erkaklar kiyimi", "o'zimga", "sovg'a", "biror narsa") so'rasa, ASLO DARHOL manzil/tel SO'RAMA!
+   - Birinchi navbatda mavjud tovarlarni narxi va qoldig'i bilan samimiy tanishtir.
+   - Mijozdan ehtiyojini aniqlashtirish uchun savol ber: qanaqa fason yoqadi (ko'ylakmi, issiq qishki paltomi), qaysi o'lcham (razmer: S, M, L) va qanaqa ranglar ma'qul!
+   - Mijoz rang yoki o'lcham tanlasa, unga mos tovarimizni tavsiya qil va "shuni buyurtma qilamizmi?" deb so'ra.
+   - Faqat va faqat mijoz aniq bir tovarni tanlab, "ha shuni olaman", "zakaz qilaman" deb tasdiqlagandagina telefon va manzilini so'ra.
+
+4. JAVOB HAJMI VA USLUBI (QOIDA 2):
    - Javobing qisqa va lo'nda bo'lsin: QAT'IY 2-3 JUMLA (gap).
    - Har safar bir xil yakunlovchi gap yozish QAT'IYAN TAQIQLANADI! Javob yakunlarini turli xil, tabiiy shaklda yakunla.
 
-4. KAM QOLGAN TOVAR VA OMBOR QOLDIG'I (QOIDA 3):
+5. KAM QOLGAN TOVAR VA OMBOR QOLDIG'I (QOIDA 3):
    - Agar mahsulot qoldig'i 2 yoki kamroq bo'lsa (1 yoki 2 dona), u haqida gapirganda QAT'IY "oxirgi N ta qoldi" deb ayt (masalan: "oxirgi 1 ta qoldi" yoki "oxirgi 2 ta qoldi").
    - Qoldig'i 0 bo'lgan tovar uchun uning omborda tugaganini bildir.
 
-5. MAVJUD BO'LMAGAN O'LCHAM (QOIDA 7):
+6. MAVJUD BO'LMAGAN O'LCHAM (QOIDA 7):
    - Agar mijoz so'ragan mahsulotda u xohlagan o'lcham (razmer) mavjud bo'lmasa, QAT'IY ravishda: "bizda faqat [mavjud o'lchamlar] bor" deb javob ber (masalan: "Kechirasiz, bu mahsulotimizda bunday o'lcham yo'q, bizda faqat M, L, XL bor").
 
 6. DO'KON SOZLAMALARI (DELIVERY, DISCOUNT, ADDRESS):
@@ -145,7 +152,7 @@ QAT'IY QOIDALAR:
                 logger.error(f"OpenAI/Groq API xatosi: {e}")
 
         # 3. Zaxira (Offline ekspert mexanizmi)
-        return self._offline_expert_fallback(user_message, customer_name)
+        return self._offline_expert_fallback(user_message, customer_name, user_id=user_id)
 
     def ask_with_photo(self, user_id: int, image_b64: str, caption: str = "", customer_name: str = "Mijoz") -> str:
         """Xaridor yuborgan kiyim yoki buyum rasmini tahlil qilib, ombordagi tovarlar bilan solishtirish"""
@@ -393,10 +400,17 @@ QAT'IY QOIDALAR:
             return data["choices"][0]["message"]["content"].strip()
         return None
 
-    def _offline_expert_fallback(self, message: str, customer_name: str) -> str:
+    def _offline_expert_fallback(self, message: str, customer_name: str, user_id: int = 0) -> str:
         """Agar API kalit kiritilmagan bo'lsa, zaxiradagi ekspert javobi"""
-        from ai_engine.sales_agent import SalesAgent
-        agent = SalesAgent()
-        return agent.process_message(message, customer_id=0, customer_name=customer_name)
+        from ai_engine.sales_agent import sales_agent
+        reply = sales_agent.process_message(
+            user_text=message,
+            customer_id=user_id,
+            customer_name=customer_name,
+            history=self.conversations.get(user_id, [])
+        )
+        if user_id in self.conversations:
+            self.conversations[user_id].append({"role": "assistant", "content": reply})
+        return reply
 
 ai_brain = AIBrain()
