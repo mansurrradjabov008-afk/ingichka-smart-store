@@ -31,6 +31,7 @@ class AIBrain:
         key = key.strip()
         if provider == "gemini":
             self.gemini_api_key = key
+            self._gemini_invalid = False
             os.environ["GEMINI_API_KEY"] = key
             return True
         elif provider == "openai":
@@ -124,7 +125,7 @@ QAT'IY QOIDALAR:
         system_prompt = self._build_system_prompt(customer_name)
 
         # 1. Google Gemini orqali chaqirish
-        if self.gemini_api_key:
+        if self.gemini_api_key and not getattr(self, '_gemini_invalid', False):
             try:
                 response = self._call_gemini(system_prompt, self.conversations[user_id])
                 if response:
@@ -349,6 +350,10 @@ QAT'IY QOIDALAR:
                     candidates = data.get("candidates", [])
                     if candidates:
                         return candidates[0]["content"]["parts"][0]["text"].strip()
+                elif resp.status_code in [400, 401, 403]:
+                    logger.warning(f"Gemini API kaliti yaroqsiz ({resp.status_code}). Zudlik bilan offline ekspert rejimiga o'tilmoqda.")
+                    self._gemini_invalid = True
+                    break
                 elif resp.status_code == 503:
                     logger.warning(f"{model_name} band (503), keyingi modelga o'tilmoqda...")
                     continue

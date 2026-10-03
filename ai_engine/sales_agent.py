@@ -42,13 +42,12 @@ class SalesAgent:
             prods = OrderMatcher.filter_products_by_price(price_filt["min_price"], price_filt["max_price"])
             return OrderMatcher.format_price_filter_response(prods, price_filt["min_price"], price_filt["max_price"])
 
-        # 5. Qoida 6: Salomlashish (Assalomu alaykum, jinsini taxmin qilmasdan)
-        if any(w in text_lower for w in ["salom", "assalom", "qalesiz", "yaxshimisiz", "bormisiz"]):
-            clean_name = customer_name if customer_name and customer_name != "Mijoz" else ""
-            greeting = f"Assalomu alaykum, {clean_name}!" if clean_name else "Assalomu alaykum!"
+        # 5. "Botmisiz yoki odammisiz" savoliga samimiy insoniy javob
+        if any(w in text_lower for w in ["botmisiz", "odammisiz", "kim bu", "robotmisiz", "jonlimisiz", "insonmisiz"]):
             return (
-                f"{greeting} Do'konimizda erkaklar, ayollar, bolalar kiyimlari va sifatli poyabzallar mavjud.\n"
-                f"Sizga aynan qaysi turdagi mahsulot ma'qul, qanday kiyim qidiryapsiz?"
+                "Assalomu alaykum! Men Ingichka Baraka Savdo do'konining aqlli yordamchisiman. "
+                "Sizga tovarlar, o'lcham va narxlar bo'yicha ma'lumot berib, buyurtmangizni tezda qabul qilib olaman. "
+                "Do'kon egasi bilan to'g'ridan-to'g'ri bog'lanish uchun: 97 913-36-86."
             )
 
         # 6. Buyurtma berish / Xarid niyati bildirilgan holat (Qoida 1: Faqat xarid niyati bo'lganda manzil/tel so'rash)
@@ -67,7 +66,43 @@ class SalesAgent:
                 "Buyurtmangizni darhol tayyorlaymiz."
             )
 
-        # 7. Mahsulot yoki Kategoriya bo'yicha qidiruv
+        # 7. Aniq tovar so'rovi (krasovka bormi, kurtka bormi, kepka bormi...)
+        matched_prod = OrderMatcher.match_product(user_text)
+        is_asking_availability = any(w in text_lower for w in ["bor", "bormi", "narxi", "qancha", "qanaqa", "razmer", "o'lcham", "rangi", "qanaqa"])
+
+        if matched_prod and is_asking_availability:
+            stock = matched_prod.get("stock_quantity", 0)
+            stock_str = f"oxirgi {stock} ta qoldi" if (stock <= 2 and stock > 0) else f"{stock} ta bor"
+            size_info = f"O'lchamlari: {matched_prod['size']}" if matched_prod.get('size') else ""
+            color_info = f"Rangi: {matched_prod['color']}" if matched_prod.get('color') else ""
+            details = ", ".join(filter(None, [size_info, color_info]))
+            
+            return (
+                f"Ha, albatta bor! Do'konimizda {matched_prod['name']} mavjud.\n"
+                f"{details}.\n"
+                f"Narxi: {matched_prod['sale_price']:,.0f} so'm ({stock_str}).\n"
+                f"Xarid qilish niyatida bo'lsangiz, buyurtmani rasmiylashtirib berishim mumkin."
+            )
+
+        # 8. Do'konda yo'q mahsulot so'ralganda (butsa bormi, kitob bormi, telefon bormi...)
+        if any(w in text_lower for w in ["bormi", "bormikan", "bormi?"]):
+            # Agar tovar bazada topilmagan bo'lsa
+            return (
+                "Kechirasiz, do'konimizda bunday mahsulot mavjud emas.\n"
+                "Bizda asosan sifatli erkaklar va ayollar kiyimlari, poyabzallar hamda aksessuarlar bor.\n"
+                "Sizga mos kiyim yoki poyabzal tanlashda yordam beraymi?"
+            )
+
+        # 9. Salomlashish (Assalomu alaykum, jinsini taxmin qilmasdan)
+        if any(w in text_lower for w in ["salom", "assalom", "qalesiz", "yaxshimisiz", "bormisiz"]):
+            clean_name = customer_name if customer_name and customer_name != "Mijoz" else ""
+            greeting = f"Assalomu alaykum, {clean_name}!" if clean_name else "Assalomu alaykum!"
+            return (
+                f"{greeting} Do'konimizda erkaklar, ayollar, bolalar kiyimlari va sifatli poyabzallar mavjud.\n"
+                f"Sizga aynan qaysi turdagi mahsulot ma'qul, qanday kiyim qidiryapsiz?"
+            )
+
+        # 10. Kategoriya bo'yicha qidiruv
         found_category = None
         if "erkak" in text_lower:
             found_category = "Erkaklar kiyimi"
@@ -80,18 +115,10 @@ class SalesAgent:
         elif "sochiq" in text_lower:
             found_category = "Sochiqlar va uy to'qimachiligi"
 
-        search_terms = ["kurtka", "futbolka", "ko'ylak", "kostyum", "palto", "kepka", "krossovka", "krasovka", "jinsi", "shim"]
-        matched_term = next((term for term in search_terms if term in text_lower), None)
-
-        if found_category or matched_term:
-            products = DatabaseManager.get_products(
-                category=found_category,
-                search_query=matched_term,
-                in_stock_only=True
-            )
+        if found_category:
+            products = DatabaseManager.get_products(category=found_category, in_stock_only=True)
             if products:
-                # Qoida 2: 2-3 jumla, Qoida 3: stock <= 2: 'oxirgi N ta qoldi'
-                reply_lines = ["Siz qidirgan tovarlarimizdan omborda quyidagilar mavjud:"]
+                reply_lines = [f"{found_category} bo'limida quyidagi mahsulotlar mavjud:"]
                 for idx, p in enumerate(products[:3], 1):
                     stock = p['stock_quantity']
                     stock_str = f"oxirgi {stock} ta qoldi" if stock <= 2 and stock > 0 else f"{stock} ta bor"
@@ -99,10 +126,10 @@ class SalesAgent:
                 reply_lines.append("Qaysi biri sizga ma'qul bo'ldi?")
                 return "\n".join(reply_lines)
 
-        # 8. Umumiy savol (Qoida 2: 2-3 jumla)
+        # 11. Boshqa umumiy murojaat
         return (
-            f"Do'konimizda barcha turdagi sifatli kiyimlar va aksessuarlar mavjud.\n"
-            f"Sizga aynan qanday mahsulot yoki o'lcham kerak, yordam beraymi?"
+            "Do'konimizda sifatli erkaklar va ayollar kiyimlari, poyabzallar va aksessuarlar mavjud.\n"
+            "Sizga aynan qanday mahsulot yoki o'lcham kerak, yordam beraymi?"
         )
 
     @staticmethod
