@@ -48,7 +48,14 @@ from bot.keyboards import (
     get_order_action_keyboard, get_phone_request_keyboard, get_channel_buy_button
 )
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+log_file_path = Path(__file__).resolve().parent.parent / "logs" / "bot_live.log"
+log_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+handlers_list = [logging.FileHandler(str(log_file_path), encoding="utf-8")]
+if sys.stdout and not getattr(sys.stdout, 'closed', False):
+    handlers_list.append(logging.StreamHandler(sys.stdout))
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s", handlers=handlers_list)
 logger = logging.getLogger(__name__)
 
 bot = Bot(token=BOT_TOKEN)

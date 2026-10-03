@@ -33,6 +33,13 @@ if sys.stderr is None:
     except Exception:
         pass
 
+def handle_uncaught_exception(exc_type, exc_value, exc_traceback):
+    import traceback
+    err = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+    log_event(f"CRITICAL UNCAUGHT EXCEPTION: {err}")
+
+sys.excepthook = handle_uncaught_exception
+
 _LOCK_SOCKET = None
 
 def acquire_lock():
@@ -99,19 +106,16 @@ def main():
         try:
             log_event(f"Bot ilovasi ishga tushirilmoqda ({bot_script})...")
             
-            with open(LOG_FILE, "a", encoding="utf-8") as log_out:
-                child_process = subprocess.Popen(
-                    [python_exe, "-u", str(bot_script)],
-                    cwd=str(BASE_DIR),
-                    stdout=log_out,
-                    stderr=log_out,
-                    env=os.environ.copy()
-                )
-                log_event(f"Bot jarayoni yaratildi (Child PID: {child_process.pid})")
-                
-                # Botning chiqishini kutish
-                exit_code = child_process.wait()
-                
+            child_process = subprocess.Popen(
+                [python_exe, "-u", str(bot_script)],
+                cwd=str(BASE_DIR),
+                env=os.environ.copy()
+            )
+            log_event(f"Bot jarayoni yaratildi (Child PID: {child_process.pid})")
+            
+            # Botning chiqishini kutish
+            exit_code = child_process.wait()
+            
             restart_count += 1
             log_event(f"Bot kodi chiqib ketdi (Kod: {exit_code}). 3 soniyadan so'ng qayta tiriltiriladi (Qayta yuklash #{restart_count})...")
             time.sleep(3)
