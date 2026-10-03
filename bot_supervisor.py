@@ -33,12 +33,16 @@ if sys.stderr is None:
     except Exception:
         pass
 
+_LOCK_SOCKET = None
+
 def acquire_lock():
     """Yagona nusxa (single instance) kafolati"""
+    global _LOCK_SOCKET
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.bind(("127.0.0.1", LOCK_PORT))
         s.listen(1)
+        _LOCK_SOCKET = s
         return s
     except socket.error:
         log_event("[OGOHLANTIRISH] Bot supervisori allaqachon orqa fonda ishlamoqda!")
@@ -67,7 +71,8 @@ def main():
     
     log_event(f"24/7 Bot Supervisori ishga tushdi (PID: {supervisor_pid})")
     
-    python_exe = sys.executable
+    pythonw_path = Path(r"C:\Users\BRand\AppData\Local\Programs\Python\Python311\pythonw.exe")
+    python_exe = str(pythonw_path) if pythonw_path.exists() else sys.executable
     bot_script = BASE_DIR / "bot" / "bot_app.py"
     
     # Graceful shutdown handler
