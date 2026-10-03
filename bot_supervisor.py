@@ -107,6 +107,7 @@ def main():
                     stderr=log_out,
                     env=os.environ.copy()
                 )
+                log_event(f"Bot jarayoni yaratildi (Child PID: {child_process.pid})")
                 
                 # Botning chiqishini kutish
                 exit_code = child_process.wait()
