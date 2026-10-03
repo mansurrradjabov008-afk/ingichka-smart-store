@@ -45,14 +45,28 @@ except Exception as e:
     print(f"❌ TELEGRAM API TEKSHIRUVI: {e}")
 
 # 3. Check Local Sentinel
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-try:
-    s.bind(('127.0.0.1', 49281))
-    s.close()
-    print("ℹ️ LOKAL SENTINEL (KOMPYUTERDA): Ishlamayapti (kutish rejimida)")
+pid_files = [BASE_DIR / ".bot_sentinel.pid", BASE_DIR / ".bot_supervisor.pid"]
+sentinel_active = False
+sentinel_pid = None
+for pf in pid_files:
+    if pf.exists():
+        try:
+            p_val = int(pf.read_text(encoding="utf-8").strip())
+            import subprocess
+            res = subprocess.run(["tasklist", "/fi", f"PID eq {p_val}"], capture_output=True, text=True)
+            if str(p_val) in res.stdout:
+                sentinel_active = True
+                sentinel_pid = p_val
+                break
+        except Exception:
+            pass
+
+if sentinel_active:
+    print(f"✅ LOKAL SENTINEL (KOMPYUTERDA): Aktiv ishlab turibdi (PID: {sentinel_pid})")
+    print("   (Renderni doimiy uyg'oq tutmoqda va Webhookni nazorat qilmoqda)")
+else:
+    print("ℹ️ LOKAL SENTINEL (KOMPYUTERDA): Kutish rejimida (yoki kompyuter o'chirilgan)")
     print("   (Eslatma: Bot Render Cloud serverida 24/7 ishlamoqda, kompyuter o'chiq bo'lsa ham bot to'xtamaydi!)")
-except socket.error:
-    print("✅ LOKAL SENTINEL (KOMPYUTERDA): Aktiv ishlab turibdi (Renderni uyg'oq tutmoqda)")
 
 # 4. Recent logs
 log_file = BASE_DIR / "logs" / "bot_live.log"

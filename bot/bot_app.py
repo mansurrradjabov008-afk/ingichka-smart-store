@@ -1378,9 +1378,15 @@ def main():
 
         web.run_app(app, host="0.0.0.0", port=port)
     else:
+        pid_file = Path(__file__).resolve().parent.parent / ".bot_sentinel.pid"
+        try:
+            pid_file.write_text(str(os.getpid()), encoding="utf-8")
+        except Exception:
+            pass
+
         render_url = os.getenv("RENDER_EXTERNAL_URL", "https://ingichka-smart-store-bot.onrender.com")
         webhook_target = f"{render_url.rstrip('/')}/webhook"
-        logger.info(f"Mahalliy Aqlli Qo'riqchi (Local Sentinel & Watchdog) ishga tushmoqda (Cloud Target: {webhook_target})...")
+        logger.info(f"Mahalliy Aqlli Qo'riqchi (Local Sentinel & Watchdog) ishga tushmoqda (PID: {os.getpid()}, Cloud Target: {webhook_target})...")
 
         async def run_local_sentinel():
             import aiohttp
