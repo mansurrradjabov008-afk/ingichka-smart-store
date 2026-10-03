@@ -40,12 +40,13 @@ def acquire_lock():
     global _LOCK_SOCKET
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind(("127.0.0.1", LOCK_PORT))
         s.listen(1)
         _LOCK_SOCKET = s
         return s
-    except socket.error:
-        log_event("[OGOHLANTIRISH] Bot supervisori allaqachon orqa fonda ishlamoqda!")
+    except socket.error as e:
+        log_event(f"[OGOHLANTIRISH] Port {LOCK_PORT} band ({e}). Bot supervisori allaqachon fonda ishlamoqda!")
         sys.exit(0)
 
 def log_event(message: str):
