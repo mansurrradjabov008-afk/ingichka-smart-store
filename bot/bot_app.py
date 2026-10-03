@@ -1303,15 +1303,38 @@ async def self_ping_task(base_url: str = "https://ingichka-smart-store-bot.onren
                     logger.info(f"Render self-ping: status {resp.status}")
             except Exception as e:
                 logger.warning(f"Self-ping xatosi: {e}")
-            await asyncio.sleep(300)
+            await asyncio.sleep(240)
 
-async def on_startup(bot: Bot) -> None:
+async def webhook_watchdog_task(bot_inst: Bot, webhook_url: str):
+    """
+    Render 24/7 Webhook Qorovuli (Self-Healing Watchdog).
+    Har 45 soniyada Telegram Webhook holatini tekshiradi.
+    Agar webhook tasodifan o'chirilgan yoki uzilgan bo'lsa, uni darhol avtomatik qayta tiklaydi!
+    """
+    logger.info(f"Render Webhook Watchdog faollashtirildi: {webhook_url}")
+    await asyncio.sleep(30)
+    while True:
+        try:
+            info = await bot_inst.get_webhook_info()
+            if info.url != webhook_url:
+                logger.warning(f"[WATCHDOG] Webhook buzilgan ({info.url}). Darhol tiklanmoqda: {webhook_url}")
+                await bot_inst.set_webhook(
+                    webhook_url,
+                    drop_pending_updates=False,
+                    allowed_updates=dp.resolve_used_update_types()
+                )
+                logger.info("[WATCHDOG] Webhook muvaffaqiyatli tiklandi!")
+        except Exception as e:
+            logger.warning(f"[WATCHDOG] Tekshirishda ogohlantirish: {e}")
+        await asyncio.sleep(45)
+
+async def on_startup(bot_inst: Bot) -> None:
     render_url = os.getenv("RENDER_EXTERNAL_URL", "https://ingichka-smart-store-bot.onrender.com")
     webhook_url = f"{render_url.rstrip('/')}/webhook"
     logger.info(f"Telegram Webhook sozlanmoqda: {webhook_url}")
     for attempt in range(5):
         try:
-            await bot.set_webhook(
+            await bot_inst.set_webhook(
                 webhook_url,
                 drop_pending_updates=False,
                 allowed_updates=dp.resolve_used_update_types()
@@ -1322,6 +1345,7 @@ async def on_startup(bot: Bot) -> None:
             logger.error(f"Webhook o'rnatishda xatolik (urinish {attempt+1}/5): {e}")
             await asyncio.sleep(3)
     asyncio.create_task(self_ping_task(render_url))
+    asyncio.create_task(webhook_watchdog_task(bot_inst, webhook_url))
 
 def main():
     init_db()
@@ -1347,22 +1371,56 @@ def main():
 
         web.run_app(app, host="0.0.0.0", port=port)
     else:
-        logger.info("Mahalliy kompyuter (Local Polling) rejimi faollashtirilmoqda...")
-        async def run_polling():
-            try:
-                await bot.delete_webhook(drop_pending_updates=False)
-                logger.info("Eski webhook tozalandi, getUpdates polling boshlanmoqda...")
-            except Exception as e:
-                logger.warning(f"Webhook tozalashda ogohlantirish: {e}")
+        render_url = os.getenv("RENDER_EXTERNAL_URL", "https://ingichka-smart-store-bot.onrender.com")
+        webhook_target = f"{render_url.rstrip('/')}/webhook"
+        logger.info(f"Mahalliy Aqlli Qo'riqchi (Local Sentinel & Watchdog) ishga tushmoqda (Cloud Target: {webhook_target})...")
 
-            while True:
-                try:
-                    await dp.start_polling(bot, drop_pending_updates=False)
-                except Exception as e:
-                    logger.error(f"Telegram polling uzildi: {e}. 3 soniyadan keyin qayta ulanadi...")
-                    await asyncio.sleep(3)
+        async def run_local_sentinel():
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                fail_count = 0
+                while True:
+                    try:
+                        # 1. Render serverini tekshirish va uyg'oq saqlash (Keep-Alive Ping)
+                        health_url = f"{render_url.rstrip('/')}/health"
+                        render_alive = False
+                        try:
+                            async with session.get(health_url, timeout=12) as resp:
+                                if resp.status == 200:
+                                    render_alive = True
+                                    fail_count = 0
+                                else:
+                                    fail_count += 1
+                        except Exception:
+                            fail_count += 1
 
-        asyncio.run(run_polling())
+                        # 2. Telegram Webhook holatini nazorat qilish
+                        try:
+                            info = await bot.get_webhook_info()
+                            if render_alive:
+                                if info.url != webhook_target:
+                                    logger.info(f"[SENTINEL] Webhook Renderga ulanmoqda: {webhook_target}")
+                                    await bot.set_webhook(
+                                        webhook_target,
+                                        drop_pending_updates=False,
+                                        allowed_updates=dp.resolve_used_update_types()
+                                    )
+                                    logger.info("[SENTINEL] Webhook muvaffaqiyatli o'rnatildi!")
+                                logger.info("[SENTINEL] Render Cloud 24/7 faol, Webhook to'g'ri sozlangan, bot 100% uyg'oq.")
+                            elif fail_count >= 5:
+                                # Faqat Render 5 marta ketma-ket javob bermasa (favqulodda zaxira)
+                                logger.warning("[SENTINEL] Render uzoq vaqt javob bermadi! Mahalliy favqulodda polling rejimiga o'tilmoqda...")
+                                await bot.delete_webhook(drop_pending_updates=False)
+                                await dp.start_polling(bot, drop_pending_updates=False)
+                        except Exception as e:
+                            logger.error(f"[SENTINEL] Telegram API tekshiruvida xato: {e}")
+
+                    except Exception as loop_err:
+                        logger.error(f"[SENTINEL] Asosiy sikl xatosi: {loop_err}")
+
+                    await asyncio.sleep(60)
+
+        asyncio.run(run_local_sentinel())
 
 if __name__ == "__main__":
     main()
