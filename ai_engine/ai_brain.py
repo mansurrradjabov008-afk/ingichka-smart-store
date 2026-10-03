@@ -260,6 +260,11 @@ Sen — "{STORE_NAME}" do'konining professional va samimiy BOSH SOTUVCHI-MASLAHA
 5. OPERATOR / JONLI INSON SO'RALGANDA:
    - "Operatorga ulayman" deb javob ber.
 
+6. JAVOB FORMATI:
+   - FAQAT xaridorga qaratilgan toza yakuniy matnni yoz!
+   - Hech qanday "Sentence 1", "Sales Flow", rejalashtirish yoki texnik izohlar yozish QAT'IYAN TAQIQLANADI!
+   - To'g'ridan-to'g'ri mijozga aytiladigan gapni yoz.
+
 DO'KON MAHSULOTLARI (products.json):
 {catalog_str}
 
@@ -287,7 +292,13 @@ DO'KON SHARTLARI (store_info.json):
             }
         }
 
-        models_to_try = ["gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.8-flash"]
+        models_to_try = [
+            "gemini-3.5-flash-lite",
+            "gemini-3.1-flash-lite",
+            "gemini-3.6-flash",
+            "gemini-3.8-flash",
+            "gemini-3.5-flash"
+        ]
         for model_name in models_to_try:
             try:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={self.gemini_api_key}"
@@ -298,13 +309,26 @@ DO'KON SHARTLARI (store_info.json):
                     if candidates and "content" in candidates[0]:
                         parts = candidates[0]["content"].get("parts", [])
                         if parts and "text" in parts[0]:
-                            return parts[0]["text"].strip()
+                            raw_text = parts[0]["text"].strip()
+                            clean_text = re.sub(r"(?i)^(?:sentence\s*\d*|step\s*\d*|thought|stage\s*\d*|bosqich\s*\d*|sales\s*flow)\s*(?:\([^)]*\))?\s*:\s*", "", raw_text)
+                            lines = clean_text.splitlines()
+                            valid_lines = []
+                            for line in lines:
+                                stripped = line.strip()
+                                if "->" in stripped and ("Need" in stripped or "Size" in stripped or "Ehtiyoj" in stripped or "Rang" in stripped):
+                                    continue
+                                if re.match(r"(?i)^(?:sentence\s*\d*|step\s*\d*|sales\s*flow|bosqich\s*\d*)\s*:", stripped):
+                                    continue
+                                valid_lines.append(line)
+                            result = "\n".join(valid_lines).strip()
+                            if result:
+                                return result
+                elif resp.status_code in [429, 503]:
+                    logger.info(f"{model_name} ({resp.status_code}), next modelga o'tilmoqda...")
+                    continue
                 elif resp.status_code in [400, 401, 403]:
                     logger.warning(f"Gemini API key error ({resp.status_code}): {resp.text[:100]}")
                     break
-                elif resp.status_code == 503:
-                    logger.warning(f"{model_name} busy (503), trying next model...")
-                    continue
             except Exception as e:
                 logger.error(f"Error calling {model_name}: {e}")
                 continue
