@@ -18,7 +18,7 @@ from utils.logger import log_bot_error
 logger = logging.getLogger(__name__)
 
 def format_product_caption(prod: Dict[str, Any]) -> str:
-    """Format single product caption with name, price, available sizes, material, and sales prompt"""
+    """Format single product caption with name, price, available sizes, material, and sales prompt (Task 4: Max 1 emoji, urgency stock <= 3)"""
     name = prod.get("name", "Mahsulot")
     price = prod.get("price") or prod.get("sale_price", 0)
     sizes = prod.get("sizes")
@@ -27,7 +27,7 @@ def format_product_caption(prod: Dict[str, Any]) -> str:
     sizes_str = ", ".join(sizes) if sizes else "Standard"
     
     st = prod.get("stock") or prod.get("stock_quantity", 0)
-    stock_label = f" (oxirgi {st} ta qoldi)" if 0 < st <= 2 else (f" ({st} dona bor)" if st > 0 else "")
+    stock_label = f" (oxirgi {st} ta qoldi)" if 0 < st <= 3 else (f" ({st} dona bor)" if st > 0 else "")
 
     color = prod.get("color") or (", ".join(prod.get("colors", [])) if prod.get("colors") else "")
     material = prod.get("material", "")
@@ -35,25 +35,25 @@ def format_product_caption(prod: Dict[str, Any]) -> str:
 
     extra_info = []
     if color:
-        extra_info.append(f"🎨 Rang: {color.capitalize()}")
+        extra_info.append(f"Rang: {color.capitalize()}")
     if material:
-        extra_info.append(f"🧵 Material: {material}")
+        extra_info.append(f"Material: {material}")
     if sku:
-        extra_info.append(f"🆔 SKU: {sku}")
+        extra_info.append(f"SKU: {sku}")
 
     extra_str = ("\n" + " | ".join(extra_info)) if extra_info else ""
 
     return (
-        f"👕 **{name}**\n"
-        f"💰 Narxi: **{price:,.0f} so'm**{stock_label}\n"
-        f"📏 Mavjud o'lchamlar: **{sizes_str}**"
+        f"**{name}**\n"
+        f"Narxi: **{price:,.0f} so'm**{stock_label}\n"
+        f"Mavjud o'lchamlar: **{sizes_str}**"
         f"{extra_str}\n\n"
         f"Xarid qilishni istaysizmi? Buyurtmani rasmiylashtirib beraymi? 😊"
     )
 
 def format_multi_product_caption(products: List[Dict[str, Any]]) -> str:
-    """Multi-product caption for Telegram media groups (Rule 1, Rule 6, Clean formatting)"""
-    lines = ["🛍️ **Do'konimizdagi tanlangan sara tovarlar:**\n"]
+    """Multi-product caption for Telegram media groups (Task 4: Max 1 emoji, urgency stock <= 3)"""
+    lines = ["**Do'konimizdagi tanlangan sara tovarlar:**\n"]
     for i, p in enumerate(products, 1):
         name = p.get("name", "Mahsulot")
         price = p.get("price") or p.get("sale_price", 0)
@@ -62,10 +62,10 @@ def format_multi_product_caption(products: List[Dict[str, Any]]) -> str:
             sizes = [s.strip() for s in str(p["size"]).split(",") if s.strip()]
         sizes_str = ", ".join(sizes) if sizes else "Standard"
         st = p.get("stock") or p.get("stock_quantity", 0)
-        stock_label = f" (oxirgi {st} ta qoldi)" if 0 < st <= 2 else (f" ({st} dona bor)" if st > 0 else "")
+        stock_label = f" (oxirgi {st} ta qoldi)" if 0 < st <= 3 else (f" ({st} dona bor)" if st > 0 else "")
         color = p.get("color") or (", ".join(p.get("colors", [])) if p.get("colors") else "")
         color_str = f" | Rang: {color.capitalize()}" if color else ""
-        lines.append(f"{i}. 👕 **{name}**\n   💰 Narxi: **{price:,.0f} so'm**{stock_label}\n   📏 O'lcham: **{sizes_str}**{color_str}")
+        lines.append(f"{i}. **{name}**\n   Narxi: **{price:,.0f} so'm**{stock_label}\n   O'lcham: **{sizes_str}**{color_str}")
 
     lines.append("\nQaysi biri sizga ma'qul? Razmer va buyurtma bo'yicha yordam beraymi? 😊")
     return "\n".join(lines)

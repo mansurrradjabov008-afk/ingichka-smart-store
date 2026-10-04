@@ -54,6 +54,7 @@ from services.waitlist_service import WaitlistService
 from services.stock_advisor import StockAdvisor, PENDING_WAITLIST_OFFERS
 from services.media_service import send_product_presentation, format_product_caption
 from services.order_flow_service import OrderFlowService
+from services.sales_intelligence import SalesIntelligence
 from bot.keyboards import (
     get_main_menu, get_category_keyboard, get_report_periods_keyboard,
     get_order_action_keyboard, get_order_approval_keyboard, get_phone_request_keyboard, get_location_request_keyboard,
@@ -235,7 +236,7 @@ async def cmd_start(message: types.Message):
                 set_pending_order(user_id, prod)
                 display_name = clean_display_name(message.from_user.first_name)
                 stock = prod.get("stock_quantity", 0)
-                stock_label = f"🔥 Shoshiling, oxirgi {stock} ta qoldi!" if stock <= 2 and stock > 0 else f"{stock} dona mavjud"
+                stock_label = f"🔥 Shoshiling, oxirgi {stock} ta qoldi!" if 0 < stock <= 3 else f"{stock} dona mavjud"
                 card_text = (
                     f"✨ **Ajoyib tanlov!**\n\n"
                     f"🛍️ **Mahsulot:** **{prod['name']}**\n"
@@ -1956,6 +1957,10 @@ async def handle_private_chat(message: types.Message):
                 products=matched_prods[:3],
                 safe_send_fn=safe_send
             )
+            # TASK 4: Cross-sell - suggest ONE related in-stock item once per conversation
+            cs_sugg = SalesIntelligence.get_cross_sell_suggestion(first_matched["id"], chat_id=message.chat.id)
+            if cs_sugg and cs_sugg.get("suggestion_text"):
+                await safe_send(message.chat.id, cs_sugg["suggestion_text"])
             return
 
     # Task 3: Mahsulot nomi aytilmagan bo'lsa ham xarid niyati bo'lsa

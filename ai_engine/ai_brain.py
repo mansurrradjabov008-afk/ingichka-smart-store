@@ -15,6 +15,7 @@ from services.catalog_service import (
     search_products, load_products, load_store_info, SEARCH_PRODUCTS_TOOL_SCHEMA
 )
 from ai_engine.grounding_validator import GroundingValidator, OPERATOR_FALLBACK_TEXT
+from services.sales_intelligence import SalesIntelligence, APPLY_DISCOUNT_TOOL_SCHEMA
 from utils.logger import log_bot_error
 
 logger = logging.getLogger(__name__)
@@ -165,6 +166,14 @@ Sen — "{STORE_NAME}" do'konining professional va samimiy BOSH SOTUVCHI-MASLAHA
 
 5. OPERATOR / JONLI INSON SO'RALGANDA:
    - Agar xaridor operator yoki jonli odam bilan gaplashmoqchi bo'lsa, "Operatorga ulayman" deb javob ber.
+
+6. SAVDO INTELLEKTI VA E'TIROZLAR (TASK 4 - SALES INTELLIGENCE):
+   - "Qimmat" deyilsa: Avval bitta asosiy foydasini (mato, sifat, qulaylik) ko'rsat, so'ng katalogdagi arzonroq REAL alternativ tovar va narxini ayt, so'ng 2+ tovar uchun 5% chegirma borligini eslat.
+   - "O'ylab ko'raman" deyilsa: Bosimsiz, bitta yumshoq va xushmuomala gap ayt ("Albatta, bemalol o'ylab ko'ring!").
+   - "Boshqa joyda arzon" deyilsa: Raqobatchilarni aslo yomonlama, o'zimizning 100% sifat kafolati va eshik oldida to'lov afzalligimizni eslat.
+   - Chegirma qoidasi: Maksimal chegirma 5% va faqat 2 va undan ortiq tovar xarid qilinganda beriladi. 1 ta tovar uchun yoki 5% dan ko'p so'ralsa rad etiladi.
+   - Shoshiltirish (Urgency): Omborda tovar soni 3 yoki kamroq bo'lsagina haqiqiy qoldiq sonini ayt ("omborda atigi N dona qoldi"). 3 tadan ko'p bo'lsa hech qachon sun'iy kamomad to'qima.
+   - Ohang va emojilar: Samimiy, qisqa (2-3 gap), insoniy. Emojilar bilan spam qilma (har bir xabarda MAKSIMAL 1 TA emoji).
 """
 
     def ask(self, chat_id: Optional[int] = None, user_message: str = "", customer_name: str = "Mijoz", user_id: Optional[int] = None) -> str:
@@ -213,6 +222,25 @@ Sen — "{STORE_NAME}" do'konining professional va samimiy BOSH SOTUVCHI-MASLAHA
             self.conversations[cid].append({"role": "assistant", "content": store_reply})
             return store_reply
 
+        # TASK 4: Chegirma so'rovlari va e'tirozlarni kod orqali qayta ishlash (Enforced in CODE)
+        is_disc, req_pct = SalesIntelligence.is_discount_query(user_message)
+        if is_disc:
+            from services.order_matcher import OrderMatcher
+            matched_prod = OrderMatcher.match_product(user_message, history=history)
+            disc_ans = SalesIntelligence.handle_discount_request(user_message, current_product=matched_prod)
+            disc_ans = SalesIntelligence.sanitize_emoji_count(disc_ans, max_emojis=1)
+            self.conversations[cid].append({"role": "assistant", "content": disc_ans})
+            return disc_ans
+
+        obj_type = SalesIntelligence.detect_objection(user_message)
+        if obj_type:
+            from services.order_matcher import OrderMatcher
+            matched_prod = OrderMatcher.match_product(user_message, history=history)
+            obj_ans = SalesIntelligence.handle_objection(obj_type, current_product=matched_prod, lang=lang)
+            obj_ans = SalesIntelligence.sanitize_emoji_count(obj_ans, max_emojis=1)
+            self.conversations[cid].append({"role": "assistant", "content": obj_ans})
+            return obj_ans
+
         # 4. Google Gemini chaqiruvi (Haqiqiy Gemini 3.5/3.6/3.8 Flash modeli)
         reply = None
         if self.gemini_api_key and not getattr(self, '_gemini_invalid', False):
@@ -254,6 +282,10 @@ Sen — "{STORE_NAME}" do'konining professional va samimiy BOSH SOTUVCHI-MASLAHA
                 reply = "Кийимлар каталогимиз бўйича яна қандай ёрдам бера оламан? Ўлчамлар ва нархлар бўйича ёрдам бераман!"
             else:
                 reply = "Kiyimlar katalogimiz bo'yicha yana qanday ma'lumot yoki maslahat kerak bo'ladi? O'lcham va narxlar bo'yicha bajonidil yordam beraman!"
+
+        # TASK 4: Tone - Max 1 emoji per message
+        if reply:
+            reply = SalesIntelligence.sanitize_emoji_count(reply, max_emojis=1)
 
         self.conversations[cid].append({"role": "assistant", "content": reply})
 
@@ -308,7 +340,15 @@ Sen — "{STORE_NAME}" do'konining professional va samimiy BOSH SOTUVCHI-MASLAHA
 5. OPERATOR / JONLI INSON SO'RALGANDA:
    - "Operatorga ulayman" deb javob ber.
 
-6. JAVOB FORMATI:
+6. SAVDO INTELLEKTI VA E'TIROZLAR (TASK 4 - SALES INTELLIGENCE):
+   - "Qimmat" deyilsa: Avval bitta asosiy foydasini (mato, sifat, qulaylik) ko'rsat, so'ng katalogdagi arzonroq REAL alternativ tovar va narxini ayt, so'ng 2+ tovar uchun 5% chegirma borligini eslat.
+   - "O'ylab ko'raman" deyilsa: Bosimsiz, bitta yumshoq va xushmuomala gap ayt ("Albatta, bemalol o'ylab ko'ring!").
+   - "Boshqa joyda arzon" deyilsa: Raqobatchilarni aslo yomonlama, o'zimizning 100% sifat kafolati va eshik oldida to'lov afzalligimizni eslat.
+   - Chegirma qoidasi: Maksimal chegirma 5% va faqat 2 va undan ortiq tovar xarid qilinganda beriladi. 1 ta tovar uchun yoki 5% dan ko'p so'ralsa rad etiladi.
+   - Shoshiltirish (Urgency): Omborda tovar soni 3 yoki kamroq bo'lsagina haqiqiy qoldiq sonini ayt ("omborda atigi N dona qoldi"). 3 tadan ko'p bo'lsa hech qachon sun'iy kamomad to'qima.
+   - Ohang va emojilar: Samimiy, qisqa (2-3 gap), insoniy. Emojilar bilan spam qilma (har bir xabarda MAKSIMAL 1 TA emoji).
+
+7. JAVOB FORMATI:
    - FAQAT xaridorga qaratilgan toza yakuniy matnni yoz!
    - Hech qanday "Sentence 1", "Sales Flow", rejalashtirish yoki texnik izohlar yozish QAT'IYAN TAQIQLANADI!
    - To'g'ridan-to'g'ri mijozga aytiladigan gapni yoz.
