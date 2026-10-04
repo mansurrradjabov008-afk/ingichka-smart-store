@@ -15,3 +15,4 @@ tests/__pycache__/
 logs/
 scratch/
 reports/*.xlsx
+!reports/KIYIM_KECHAK_DOKONI_OMBOR_HISOBOTI.xlsx

@@ -30,14 +30,27 @@ def get_order_action_keyboard(order_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def get_category_keyboard() -> InlineKeyboardMarkup:
-    """Kategoriyalar inline tugmalari"""
+    """Do'kondagi real tovar kategoriyalari inline tugmalari"""
     buttons = [
-        [InlineKeyboardButton(text="👔 Erkaklar kiyimi", callback_data="cat_Erkaklar kiyimi")],
-        [InlineKeyboardButton(text="👗 Ayollar kiyimi", callback_data="cat_Ayollar kiyimi")],
-        [InlineKeyboardButton(text="🧸 Bolalar kiyimi", callback_data="cat_Bolalar kiyimi")],
-        [InlineKeyboardButton(text="👟 Poyabzallar va Krossovkalar", callback_data="cat_Poyabzallar va Krossovkalar")],
-        [InlineKeyboardButton(text="👜 Sumka va aksessuarlar", callback_data="cat_Sumkalar va aksessuarlar")],
-        [InlineKeyboardButton(text="🧖 Sochiqlar va to'qimachilik", callback_data="cat_Sochiqlar va uy to'qimachiligi")]
+        [
+            InlineKeyboardButton(text="👕 Futbolkalar", callback_data="cat_Futbolka"),
+            InlineKeyboardButton(text="👖 Jinsilar", callback_data="cat_Jinsi")
+        ],
+        [
+            InlineKeyboardButton(text="👔 Ko'ylaklar", callback_data="cat_Ko'ylak"),
+            InlineKeyboardButton(text="🧥 Kurtkalar", callback_data="cat_Kurtka")
+        ],
+        [
+            InlineKeyboardButton(text="🧣 Paltolar", callback_data="cat_Palto"),
+            InlineKeyboardButton(text="👖 Shimlar", callback_data="cat_Shim")
+        ],
+        [
+            InlineKeyboardButton(text="🧢 Kepkalar", callback_data="cat_Kepka"),
+            InlineKeyboardButton(text="🧦 Paypoqlar", callback_data="cat_Paypoq")
+        ],
+        [
+            InlineKeyboardButton(text="🩲 Ichki kiyimlar", callback_data="cat_Ichki kiyim")
+        ]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 

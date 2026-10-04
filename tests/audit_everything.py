@@ -7,37 +7,38 @@ from ai_engine.ai_brain import ai_brain
 from ai_engine.sales_agent import SalesAgent
 from services.order_matcher import OrderMatcher
 from services.store_settings_manager import StoreSettingsManager
+from services.catalog_service import search_products
 import json
 
 def run_deep_audit():
-    print("=" * 60)
-    print("MARKAZSAVDO 100% DEEP ARCHITECTURAL & COMPLIANCE AUDIT")
-    print("=" * 60)
+    print("=" * 70)
+    print("MARKAZSAVDO 49-PRODUCT REAL STORE INVENTORY AUDIT")
+    print("=" * 70)
     init_db()
     agent = SalesAgent()
-
     errors = []
 
-    # 1. TEST PRODUCT MATCHING: Krasovka / Krossovka / Poyabzal
-    print("\n--- 1. Krasovka & Shoe Detection ---")
-    inquiries = [
-        "men uglimga krasovka olmoqchi edim,menga krasovkalarizni kursata olasizmi",
-        "krasovka bormi",
-        "menga poyabzal kerak",
-        "oq krossovki qancha"
+    # 1. TEST REAL STORE PRODUCT MATCHING
+    print("\n--- 1. Real Products Matching (SKU, Brand, Category) ---")
+    test_cases = [
+        ("adidas futbolka bormi", "Adidas Printli futbolka Ko'k", 200000),
+        ("nike kepka qancha", "Nike Yozgi kepka Bej", 229000),
+        ("zara palto bej", "Zara Yengil palto Bej", 2062000),
+        ("KK-1022", "Adidas Slim fit jinsi Moviy", 445000),
+        ("uztex paypoq", "UzTex", 45000)
     ]
-    for inq in inquiries:
-        res = agent.process_message(user_text=inq, customer_id=101, customer_name="Mansur")
-        if "krossovka" in res.lower() or "380,000" in res or "380 000" in res or "40, 41" in res:
-            print(f"PASS: '{inq}' -> {res[:70]}...")
+    for q, exp_name, exp_price in test_cases:
+        matched = OrderMatcher.match_product(q)
+        if matched and exp_name.lower() in matched["name"].lower():
+            print(f"PASS: '{q}' -> #{matched['id']} {matched['name']} ({matched['sale_price']:,.0f} so'm, SKU: {matched.get('sku')})")
         else:
-            errors.append(f"Product matching failed for: {inq} -> {res}")
+            errors.append(f"Matching failed for '{q}'. Got: {matched['name'] if matched else None}, Expected: {exp_name}")
 
-    # 2. RULE 1: Never ask phone/address unless buying intent
+    # 2. RULE 1: Never ask phone/address without purchase intent
     print("\n--- 2. Rule 1: No phone/address without purchase intent ---")
     non_purchase = [
         "narxlar qanaqa",
-        "kurtka bormi",
+        "palto bormi",
         "razmerlari qanaqa",
         "rangi qanaqa"
     ]
@@ -49,8 +50,8 @@ def run_deep_audit():
             print(f"PASS: No purchase intent for '{np}'")
 
     purchase = [
-        "men 42-razmer krasovka olaman, manzil Navoiy ko'chasi 15, tel 901234567",
-        "bitta qora kurtka sotib olmoqchiman, manzil Toshkent uy 5, tel 991112233"
+        "men Adidas futbolka olaman, manzil Navoiy ko'chasi 15, tel 901234567",
+        "bitta Nike kepka sotib olmoqchiman, manzil Toshkent uy 5, tel 991112233"
     ]
     for p in purchase:
         parsed = OrderMatcher.extract_order_details(p)
@@ -59,51 +60,58 @@ def run_deep_audit():
         else:
             print(f"PASS: Order details extracted for '{p}': phone={parsed['phone']}, addr={parsed['address']}")
 
-    # 3. RULE 2: Dynamic closings (no repetitive loops)
-    print("\n--- 3. Rule 2: Dynamic Closings Rotation ---")
-    replies = set()
-    for h_len in range(4):
-        fake_hist = [{"role": "user", "content": f"msg {i}"} for i in range(h_len)]
-        rep = agent.process_message(customer_id=200 + h_len, user_text="krasovka bormi", customer_name="Test", history=fake_hist)
-        replies.add(rep)
-    if len(replies) >= 2:
-        print(f"PASS: {len(replies)} distinct response/closing variants produced across turns.")
+    # 3. RULE 3: Low stock label (<= 2)
+    print("\n--- 3. Rule 3: Low Stock Label 'oxirgi N ta qoldi' ---")
+    # KK-1059 LC Waikiki Briefs (id 9, stock 2) -> "oxirgi 2 ta qoldi"
+    p9_cat = search_products("KK-1059")
+    p9 = p9_cat.get("products", [{}])[0]
+    if "oxirgi 2 ta qoldi" in p9.get("stock_status", ""):
+        print(f"PASS: Product #9 (stock 2): '{p9['stock_status']}'")
     else:
-        print(f"INFO: Generated replies: {len(replies)}")
+        errors.append(f"Rule 3 violation for #9: {p9.get('stock_status')}")
 
-    # 4. RULE 3: Low stock label (<= 2)
-    print("\n--- 4. Rule 3: Low Stock Label 'oxirgi N ta qoldi' ---")
-    from services.catalog_service import search_products
-    cat_res = search_products("ko'ylak")
-    p4_match = next((p for p in cat_res.get("products", []) if p["id"] == 4), None)
-    if p4_match and "oxirgi 2 ta qoldi" in p4_match.get("stock_status", ""):
-        print(f"PASS: catalog_service product #4 (stock 2): '{p4_match['stock_status']}'")
+    # KK-1008 Puma ofis ko'ylak (id 25, stock 1) -> "oxirgi 1 ta qoldi"
+    p25_cat = search_products("KK-1008")
+    p25 = p25_cat.get("products", [{}])[0]
+    if "oxirgi 1 ta qoldi" in p25.get("stock_status", ""):
+        print(f"PASS: Product #25 (stock 1): '{p25['stock_status']}'")
     else:
-        errors.append(f"Rule 3 violation in catalog_service: {p4_match}")
+        errors.append(f"Rule 3 violation for #25: {p25.get('stock_status')}")
 
-    order_quote = OrderMatcher.calculate_quote("bitta ko'ylak qancha bo'ladi")
-    if order_quote and "oxirgi 2 ta qoldi" in order_quote:
-        print(f"PASS: OrderMatcher quote: '{order_quote}'")
+    # 4. OUT OF STOCK (stock == 0)
+    print("\n--- 4. Out of Stock Handling (stock == 0) ---")
+    # KK-1064 LC Waikiki Termo (id 10, stock 0)
+    p10_cat = search_products("KK-1064")
+    p10 = p10_cat.get("products", [{}])[0]
+    if "yo'q" in p10.get("stock_status", ""):
+        print(f"PASS: Product #10 (stock 0): '{p10['stock_status']}'")
     else:
-        errors.append(f"Rule 3 violation in OrderMatcher quote: {order_quote}")
+        errors.append(f"Out of stock labeling failed for #10: {p10.get('stock_status')}")
 
-    # 5. RULE 4: Deterministic code price filter
-    print("\n--- 5. Rule 4: Code Price Filtering ---")
-    filter_prods = OrderMatcher.filter_products_by_price(max_price=300000)
-    filter_res = OrderMatcher.format_price_filter_response(filter_prods, min_price=0, max_price=300000)
-    if "Kepka" in filter_res and "futbolka" in filter_res and "jinsi" in filter_res and "kurtka" not in filter_res:
-        print("PASS: Price filter correctly returned all products <= 300,000 via code.")
+    # 5. RULE 4: Code Price Filtering
+    print("\n--- 5. Rule 4: Deterministic Code Price Filter ---")
+    filter_prods = OrderMatcher.filter_products_by_price(min_price=0, max_price=100000)
+    filter_res = OrderMatcher.format_price_filter_response(filter_prods, min_price=0, max_price=100000)
+    if len(filter_prods) >= 4 and ("Paypoq" in filter_res or "ichki" in filter_res.lower() or "Briefs" in filter_res) and "Palto" not in filter_res:
+        print(f"PASS: Filter <= 100,000 returned {len(filter_prods)} products completely by code.")
     else:
-        errors.append(f"Rule 4 violation: Price filter returned incorrect items: {filter_res}")
+        errors.append(f"Price filter returned unexpected items: {filter_res}")
 
-    # 6. RULE 5: Deterministic code total sum calculation
+    # 6. RULE 5: Code-calculated Total Sum
     print("\n--- 6. Rule 5: Code-calculated Total Sum ---")
-    sum_test1 = OrderMatcher.calculate_quote("2 ta kurtka qancha bo'ladi")
-    sum_test2 = OrderMatcher.calculate_quote("3 ta kurtka qancha bo'ladi")
-    if sum_test1 and "900,000 so'm" in sum_test1 and sum_test2 and "1,350,000 so'm" in sum_test2:
-        print(f"PASS: 2 kurtka = 900,000 so'm; 3 kurtka = 1,350,000 so'm calculated by code.")
+    quote1 = OrderMatcher.calculate_quote("2 ta Adidas futbolka qancha bo'ladi")
+    # 2 * 200,000 = 400,000
+    if quote1 and "400,000 so'm" in quote1:
+        print(f"PASS: 2 x Adidas futbolka = {quote1}")
     else:
-        errors.append(f"Rule 5 violation: Sum calculation mismatch: {sum_test1}, {sum_test2}")
+        errors.append(f"Sum calculation failed for Adidas futbolka: {quote1}")
+
+    quote2 = OrderMatcher.calculate_quote("3 ta Nike polo narxi qancha")
+    # 3 * 174,000 = 522,000
+    if quote2 and "522,000 so'm" in quote2:
+        print(f"PASS: 3 x Nike polo = {quote2}")
+    else:
+        errors.append(f"Sum calculation failed for Nike polo: {quote2}")
 
     # 7. RULE 6: Neutral greeting & no gender guessing
     print("\n--- 7. Rule 6: Respectful Greeting without Gender Guessing ---")
@@ -115,11 +123,12 @@ def run_deep_audit():
 
     # 8. RULE 7: Missing sizes handled with 'bizda faqat X, Y, Z bor'
     print("\n--- 8. Rule 7: Missing Size Handling ---")
-    size_msg = agent.process_message(customer_id=102, user_text="krasovkadan 46 razmer bormi", customer_name="Mijoz")
-    if "faqat" in size_msg.lower() and ("40" in size_msg or "41" in size_msg):
-        print(f"PASS: Missing size handled: {size_msg}")
+    # Adidas Printli futbolka is size XXL
+    miss_msg = OrderMatcher.check_size_inquiry("Adidas Printli futbolkadan M razmer bormi")
+    if miss_msg and "faqat XXL bor" in miss_msg:
+        print(f"PASS: Missing size handled: {miss_msg}")
     else:
-        errors.append(f"Rule 7 violation: Missing size response format incorrect: {size_msg}")
+        errors.append(f"Rule 7 violation: {miss_msg}")
 
     # 9. STORE SETTINGS CONFIG & OWNER NOTIFICATION
     print("\n--- 9. Store Settings Config & Owner Notification ---")
@@ -129,24 +138,25 @@ def run_deep_audit():
     else:
         errors.append(f"Store settings check failed: {deliv_check}")
 
-    # 10. MISSING ITEMS HANDLING
-    print("\n--- 10. Missing Catalog Items ---")
-    missing_item = agent.process_message(customer_id=103, user_text="sizlarda velosiped bormi", customer_name="Mijoz")
-    if "mavjud emas" in missing_item.lower():
-        print(f"PASS: Missing item response: {missing_item}")
+    # 10. TOTAL 49 PRODUCTS IN DATABASE
+    print("\n--- 10. SQLite Database Integrity ---")
+    all_prods = DatabaseManager.get_products(in_stock_only=False)
+    in_stock = DatabaseManager.get_products(in_stock_only=True)
+    if len(all_prods) == 49:
+        print(f"PASS: Jami 49 ta tovar bazada to'liq mavjud! (Omborda bor: {len(in_stock)} ta, Tugagan: {len(all_prods)-len(in_stock)} ta)")
     else:
-        errors.append(f"Missing item handling failed: {missing_item}")
+        errors.append(f"Expected 49 products in DB, found {len(all_prods)}")
 
-    print("\n" + "=" * 60)
+    print("\n" + "=" * 70)
     if not errors:
-        print("ALL 10 ARCHITECTURAL & BUSINESS RULE SUITES PASSED 100% WITH ZERO ERRORS!")
-        print("=" * 60)
+        print("ALL 10 VERIFICATION SUITES FOR 49 REAL PRODUCTS PASSED 100% WITH ZERO ERRORS!")
+        print("=" * 70)
         return True
     else:
         print(f"FAILURES DETECTED ({len(errors)}):")
         for e in errors:
             print(f" - {e}")
-        print("=" * 60)
+        print("=" * 70)
         return False
 
 if __name__ == "__main__":

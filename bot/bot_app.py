@@ -1352,7 +1352,7 @@ from aiohttp import web
 
 import subprocess
 
-CURRENT_VERSION = "v3.1-sales-master"
+CURRENT_VERSION = "v4.0-inventory-49prods"
 
 def get_current_commit() -> str:
     try:
@@ -1383,7 +1383,7 @@ async def handle_diag(request):
     gemini_alive = False
     sample_response = ""
     try:
-        test_out = ai_brain.ask(chat_id=999999999, user_message="krasovka bormi", customer_name="TestMijoz")
+        test_out = ai_brain.ask(chat_id=999999999, user_message="futbolka bormi", customer_name="TestMijoz")
         if test_out:
             gemini_alive = True
             sample_response = test_out

@@ -49,18 +49,20 @@ def search_products(
     for p in all_products:
         p_name = p.get("name", "").lower()
         p_cat = p.get("category", "").lower()
+        p_sku = p.get("sku", "").lower()
+        p_brand = p.get("brand", "").lower()
         p_aliases = [a.lower() for a in p.get("aliases", [])]
         p_sizes = [s.upper() for s in p.get("sizes", [])]
         p_colors = [c.lower() for c in p.get("colors", [])]
         p_price = float(p.get("price", 0))
 
-        # 1. Query bo'yicha tekshiruv (nomi, kategoriya yoki aliaslar)
+        # 1. Query bo'yicha tekshiruv (nomi, SKU, brend, kategoriya yoki aliaslar)
         if q_clean:
             match_query = False
             # To'liq moslik yoki qism moslik
-            if q_clean in p_name or any(q_clean in a or a in q_clean for a in p_aliases):
+            if q_clean in p_name or q_clean in p_sku or q_clean in p_brand or any(q_clean in a or a in q_clean for a in p_aliases):
                 match_query = True
-            elif any(w in p_name or any(w in a for a in p_aliases) for w in q_words if len(w) >= 3):
+            elif any(w in p_name or w in p_sku or w in p_brand or any(w in a for a in p_aliases) for w in q_words if len(w) >= 3):
                 match_query = True
             
             if not match_query:

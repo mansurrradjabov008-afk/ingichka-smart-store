@@ -51,12 +51,21 @@ class OrderMatcher:
 
         t_low = text.lower()
 
-        # 1. Aniq ID orqali (#16, buy_16, id 16, 16-tovar)
+        # 1a. SKU orqali aniqlash (KK-1002, KK 1002, KK-1025)
+        sku_match = re.search(r"\b(?:kk[-_\s]?)(\d{4})\b", t_low)
+        if sku_match:
+            sku_target = f"KK-{sku_match.group(1)}"
+            all_p = DatabaseManager.get_products(in_stock_only=False)
+            for p in all_p:
+                if p.get("sku") == sku_target or sku_target.lower() in (p.get("description") or "").lower():
+                    return p
+
+        # 1b. Aniq ID orqali (#16, buy_16, id 16, 16-tovar)
         id_match = re.search(r"(?:#|buy_|id\s*|tovar\s*|mahsulot\s*)(\d{1,3})", t_low)
         if id_match:
             pid = int(id_match.group(1))
             prod = DatabaseManager.get_product_by_id(pid)
-            if prod and prod.get("stock_quantity", 0) > 0:
+            if prod:
                 return prod
 
         # 2. Agar mijoz "1-kursatganingiz", "birinchi", "2-chi" desa
@@ -65,23 +74,40 @@ class OrderMatcher:
             if ord_match:
                 return ord_match
 
-        # 3. Kalit so'zlar orqali aniqlash
-        best_prod_id = None
-        max_score = 0
+        # 3. Dinamik ko'p parametrli qidiruv (Barcha 49 ta tovar bo'yicha)
+        all_prods = DatabaseManager.get_products(in_stock_only=False)
+        best_dyn_prod = None
+        best_dyn_score = 0
 
-        for pid, keywords in cls.KEYWORD_MAP.items():
+        for p in all_prods:
+            p_name = p.get("name", "").lower()
+            p_cat = p.get("category", "").lower()
+            p_color = p.get("color", "").lower()
+            p_brand = (p.get("brand") or "").lower()
+            p_desc = (p.get("description") or "").lower()
+
             score = 0
-            for kw in keywords:
-                if kw in t_low:
-                    score += len(kw)
-            if score > max_score:
-                max_score = score
-                best_prod_id = pid
+            if p_name and p_name in t_low:
+                score += 60
+            if p_brand and p_brand in t_low:
+                score += 30
+            if p_cat and p_cat in t_low:
+                score += 20
+            if p_color and p_color in t_low:
+                score += 15
+            for w in t_low.split():
+                if len(w) >= 4 and (w in p_name or w in p_desc):
+                    score += 8
 
-        if best_prod_id and max_score >= 3:
-            prod = DatabaseManager.get_product_by_id(best_prod_id)
-            if prod and prod.get("stock_quantity", 0) > 0:
-                return prod
+            if p.get("stock_quantity", 0) > 0 and score > 0:
+                score += 5
+
+            if score > best_dyn_score:
+                best_dyn_score = score
+                best_dyn_prod = p
+
+        if best_dyn_prod and best_dyn_score >= 25:
+            return best_dyn_prod
 
         # 4. Agar foydalanuvchida oldindan tanlangan tovar (pending_product) bo'lsa
         if pending_product:
@@ -91,35 +117,28 @@ class OrderMatcher:
         if history:
             for msg in reversed(history[-4:]):
                 content = msg.get("content", "").lower()
-                for pid, keywords in cls.KEYWORD_MAP.items():
-                    for kw in keywords:
-                        if kw in content:
-                            prod = DatabaseManager.get_product_by_id(pid)
-                            if prod and prod.get("stock_quantity", 0) > 0:
-                                return prod
+                for p in all_prods:
+                    if p.get("name", "").lower() in content:
+                        return p
 
-        # 6. Dinamik qidiruv: Yangi qo'shilgan tovarlar bazasidan to'liq qidirish
-        all_prods = DatabaseManager.get_products(in_stock_only=True)
-        for p in all_prods:
-            p_name = p.get("name", "").lower()
-            if p_name and p_name in t_low:
-                return p
-
-        # 7. Oxirgi zaxira: umumiy so'zlar
-        if any(w in t_low for w in ["krasovka", "krossovka", "poyabzal"]):
-            return DatabaseManager.get_product_by_id(8)
-        if any(w in t_low for w in ["kurtka"]):
-            return DatabaseManager.get_product_by_id(1)
-        if any(w in t_low for w in ["futbolka"]):
-            return DatabaseManager.get_product_by_id(2)
-        if any(w in t_low for w in ["jinsi", "shim"]):
-            return DatabaseManager.get_product_by_id(3)
-        if any(w in t_low for w in ["ko'ylak", "koylak"]):
-            return DatabaseManager.get_product_by_id(4)
-        if any(w in t_low for w in ["palto"]):
-            return DatabaseManager.get_product_by_id(6)
-        if any(w in t_low for w in ["kepka"]):
-            return DatabaseManager.get_product_by_id(7)
+        # 6. Umumiy kategoriya bo'yicha zaxira (ombordagi birinchi mavjud tovar)
+        cat_triggers = {
+            "futbolka": "Futbolka",
+            "jinsi": "Jinsi",
+            "ko'ylak": "Ko'ylak",
+            "koylak": "Ko'ylak",
+            "kurtka": "Kurtka",
+            "palto": "Palto",
+            "paypoq": "Paypoq",
+            "kepka": "Kepka",
+            "ichki kiyim": "Ichki kiyim",
+            "shim": "Shim"
+        }
+        for kw, cat_name in cat_triggers.items():
+            if kw in t_low:
+                cat_prods = [p for p in all_prods if p.get("category") == cat_name and p.get("stock_quantity", 0) > 0]
+                if cat_prods:
+                    return cat_prods[0]
 
         return None
 
