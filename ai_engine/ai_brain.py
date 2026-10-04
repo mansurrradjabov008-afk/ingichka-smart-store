@@ -571,7 +571,10 @@ DO'KON SHARTLARI (store_info.json):
             "ko'ylak": ["ko'ylak", "koylak", "платье", "dress"],
             "palto": ["palto", "пальто", "coat"],
             "kepka": ["kepka", "кепка", "бейсболка", "cap"],
-            "sport kostyum": ["sportivka", "sport kostyum", "спортивка"]
+            "sport kostyum": ["sportivka", "sport kostyum", "спортивка"],
+            "qishki": ["qishki", "qish", "issiqlik", "issiq kiyim", "qishki kiyim", "qishki kiyimlar", "зимн", "теплая одежда"],
+            "ichki kiyim": ["ichki", "ichki kiyim", "trusik", "boksyor", "termo", "briefs", "трусы", "нижнее белье"],
+            "paypoq": ["paypoq", "paypoqlar", "noski", "носки", "socks"]
         }
         for canon, aliases in keywords_map.items():
             if any(a in t_low for a in aliases):
@@ -583,7 +586,15 @@ DO'KON SHARTLARI (store_info.json):
             item_match = re.search(r"(\b[\w']+\b)\s+(?:bormi|bormikan|kerak|olmoqchi|qancha|narxi)", t_low)
             if item_match:
                 candidate = item_match.group(1).strip()
-                if candidate not in ["sizda", "bizda", "yana", "boshqa", "shu", "menga", "bu", "sizlarda", "ulardan"]:
+                stop_candidates = {
+                    "sizda", "bizda", "yana", "boshqa", "shu", "menga", "bu", "sizlarda", "ulardan",
+                    "narxi", "narx", "qancha", "necha", "nechpul", "nechi", "puli", "bormi", "bormikan",
+                    "kerak", "olmoqchi", "kiyim", "kiyimlar", "tovar", "tovarlar", "narsa", "narsalar",
+                    "model", "modellar", "biri", "birini", "uchun", "salom", "iltimos", "aka", "uka",
+                    "opa", "singil", "uz", "yaxshi", "qanday", "qanaqa", "qaysi", "deb", "ham", "esa",
+                    "razmer", "razmeri", "olcham", "o'lcham", "o'lchami", "rang", "rangi", "размер"
+                }
+                if candidate not in stop_candidates:
                     query = candidate
 
         # 1c. Do'konda yo'q ma'lum so'zlar
@@ -596,7 +607,7 @@ DO'KON SHARTLARI (store_info.json):
 
         # 1d. FAQAT VA FAQAT joriy xabarda tovar aytilmagan bo'lsa va xaridor o'lcham, rang, narx yoki xarid tafsilotlarini so'rayotgan bo'lsa, tarixdan olish
         is_attribute_or_followup = any(w in t_low for w in ["razmer", "o'lcham", "rang", "qora", "oq", "ko'k", "qizil", "bej", "narxi", "qancha", "olaman", "razmeri"])
-        if not query and is_attribute_or_followup and not any(w in t_low for w in ["bormi", "bormikan"]):
+        if not query and is_attribute_or_followup:
             for canon, aliases in keywords_map.items():
                 if any(a in hist_low for a in aliases):
                     query = canon
@@ -763,6 +774,15 @@ DO'KON SHARTLARI (store_info.json):
         if len(products) > 1:
             prod_names = [f"'{p['name']}' ({p['price']:,.0f} so'm)" for p in products[:3]]
             listing = ", ".join(prod_names)
+            is_asking_price = any(w in t_low for w in ["narxi", "qancha", "necha", "цена", "почем", "сколько"])
+            if is_asking_price:
+                if lang == "ru":
+                    return f"Цены на эти модели: {listing}. Какой вариант вас интересует?"
+                elif lang == "uz_cyrl":
+                    return f"Ушбу моделларнинг нархлари: {listing}. Қайси бирини танлайсиз?"
+                else:
+                    return f"Ushbu modellarning narxlari quyidagicha: {listing}. Qaysi biri sizga ma'qul?"
+
             closings_multi_uz = [
                 "Sizga qaysi rang yoki o'lcham ma'qul bo'ladi?",
                 "Qaysi birining o'lchamlarini ko'rib chiqamiz?",

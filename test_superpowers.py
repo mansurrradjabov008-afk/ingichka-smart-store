@@ -27,7 +27,7 @@ def run_superpowers_verification():
 
     # 1. AI Matnli muloqot testi (Gemini Flash)
     print("--- 1. GEMINI AI MATN TESTI ---")
-    reply = ai_brain.ask(user_id=888, user_message="Do'konda ayollar ko'ylaklari bormi?", customer_name="Nodira opa")
+    reply = ai_brain.ask(chat_id=888, user_message="Do'konda ayollar ko'ylaklari bormi?", customer_name="Nodira opa")
     print("AI Javobi:\n", reply[:250], "...\n")
     assert len(reply) > 20, "AI javobi bo'sh!"
     print("✅ 1-Test Muvaffaqiyatli!")
