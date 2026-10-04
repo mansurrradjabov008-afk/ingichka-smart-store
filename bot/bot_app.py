@@ -1438,7 +1438,8 @@ async def webhook_watchdog_task(bot_inst: Bot, webhook_url: str):
             logger.warning(f"[WATCHDOG] Tekshirishda ogohlantirish: {e}")
         await asyncio.sleep(45)
 
-async def on_startup(bot_inst: Bot) -> None:
+async def on_startup(bot: Optional[Bot] = None, *args: Any, **kwargs: Any) -> None:
+    bot_inst = bot or kwargs.get("bot") or globals().get("bot")
     render_url = os.getenv("RENDER_EXTERNAL_URL", "https://ingichka-smart-store-bot.onrender.com")
     webhook_url = f"{render_url.rstrip('/')}/webhook"
     logger.info(f"Telegram Webhook sozlanmoqda: {webhook_url}")
