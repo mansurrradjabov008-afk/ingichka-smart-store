@@ -342,6 +342,11 @@ async def handle_location_message(message: types.Message):
                         await safe_send(aid, admin_alert, reply_markup=get_order_action_keyboard(res['order_id']))
                     except Exception:
                         pass
+                if CHANNEL_ID:
+                    try:
+                        await safe_send(CHANNEL_ID, admin_alert)
+                    except Exception:
+                        pass
                 return
             else:
                 await safe_send(message.chat.id, "Kechirasiz, tanlangan tovar ayni paytda omborda qolmagan.")
@@ -1007,6 +1012,11 @@ async def handle_voice_message(message: types.Message):
                                 await safe_send(aid, admin_alert, reply_markup=get_order_action_keyboard(new_order_id))
                             except Exception:
                                 pass
+                        if CHANNEL_ID:
+                            try:
+                                await safe_send(CHANNEL_ID, admin_alert)
+                            except Exception:
+                                pass
                         return
 
         # 5. Oddiy ovozli savol bo'lsa
@@ -1322,6 +1332,11 @@ async def handle_private_chat(message: types.Message):
                                 await safe_send(aid, admin_alert, reply_markup=get_order_action_keyboard(order_res["order_id"]))
                             except Exception:
                                 pass
+                        if CHANNEL_ID:
+                            try:
+                                await safe_send(CHANNEL_ID, admin_alert)
+                            except Exception:
+                                pass
                         return
         except Exception as e:
             logger.error(f"Avtomatik buyurtma qaydida xatolik: {e}")
@@ -1349,10 +1364,12 @@ async def global_error_handler(event: ErrorEvent):
 
 
 from aiohttp import web
-
 import subprocess
+import collections
+from datetime import datetime
 
-CURRENT_VERSION = "v4.0-inventory-49prods"
+CURRENT_VERSION = "v4.1-cloud-uninterrupted"
+PING_HISTORY = collections.deque(maxlen=30)
 
 def get_current_commit() -> str:
     try:
@@ -1361,9 +1378,27 @@ def get_current_commit() -> str:
         return "latest"
 
 async def handle_health_check(request):
+    ua = request.headers.get("User-Agent", "Unknown")
+    client_ip = request.headers.get("X-Forwarded-For", request.remote or "Unknown")
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    PING_HISTORY.append({
+        "time": now_str,
+        "ua": ua[:80],
+        "ip": str(client_ip).split(",")[0].strip(),
+        "path": request.path
+    })
     return web.Response(text="MarkazSavdo Ingichka AI Bot is 100% LIVE and Running 24/7!", status=200)
 
 async def handle_status(request):
+    ua = request.headers.get("User-Agent", "Unknown")
+    client_ip = request.headers.get("X-Forwarded-For", request.remote or "Unknown")
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    PING_HISTORY.append({
+        "time": now_str,
+        "ua": ua[:80],
+        "ip": str(client_ip).split(",")[0].strip(),
+        "path": request.path
+    })
     prods = DatabaseManager.get_products(in_stock_only=False)
     data = {
         "status": "healthy",
@@ -1373,7 +1408,8 @@ async def handle_status(request):
         "products_count": len(prods),
         "products": [{"id": p["id"], "name": p["name"], "stock": p["stock_quantity"], "price": p["sale_price"]} for p in prods],
         "has_gemini": bool(GEMINI_API_KEY),
-        "has_token": bool(BOT_TOKEN)
+        "has_token": bool(BOT_TOKEN),
+        "recent_pings": list(PING_HISTORY)
     }
     return web.json_response(data)
 
