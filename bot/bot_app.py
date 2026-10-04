@@ -1462,6 +1462,11 @@ def main():
     init_db()
     logger.info("Ingichka Baraka Savdo Markazi AI boti ishga tushmoqda...")
 
+    if "--polling" in sys.argv:
+        logger.info("Mahalliy sinov uchun Polling rejimida ishga tushirilmoqda (--polling)...")
+        asyncio.run(dp.start_polling(bot))
+        return
+
     port_env = os.getenv("PORT")
     is_render = bool(os.getenv("RENDER")) or bool(port_env)
 
@@ -1525,11 +1530,16 @@ def main():
                                     )
                                     logger.info("[SENTINEL] Webhook muvaffaqiyatli o'rnatildi!")
                                 logger.info("[SENTINEL] Render Cloud 24/7 faol, Webhook to'g'ri sozlangan, bot 100% uyg'oq.")
-                            elif fail_count >= 5:
-                                # Faqat Render 5 marta ketma-ket javob bermasa (favqulodda zaxira)
-                                logger.warning("[SENTINEL] Render uzoq vaqt javob bermadi! Mahalliy favqulodda polling rejimiga o'tilmoqda...")
-                                await bot.delete_webhook(drop_pending_updates=False)
-                                await dp.start_polling(bot, drop_pending_updates=False)
+                            else:
+                                # Render uxlab qolgan bo'lsa yoki uyg'onish jarayonida bo'lsa, Webhookni Renderga yo'naltirilgan holda saqlaymiz!
+                                if info.url != webhook_target:
+                                    logger.warning(f"[SENTINEL] Webhook tiklanmoqda: {webhook_target}")
+                                    await bot.set_webhook(
+                                        webhook_target,
+                                        drop_pending_updates=False,
+                                        allowed_updates=dp.resolve_used_update_types()
+                                    )
+                                logger.info(f"[SENTINEL] Render uyg'onishi kutilmoqda (fail_count: {fail_count}). Webhook xavfsiz saqlanmoqda.")
                         except Exception as e:
                             logger.error(f"[SENTINEL] Telegram API tekshiruvida xato: {e}")
 

@@ -95,7 +95,32 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_order_items_product ON order_items(product_id);")
+    # 6. Auto-seed catalog from products.json if table is empty (Self-Healing DB)
+    cursor.execute("SELECT COUNT(*) FROM products;")
+    if cursor.fetchone()[0] == 0:
+        import json
+        from pathlib import Path
+        products_json_path = Path(__file__).resolve().parent.parent / "products.json"
+        if products_json_path.exists():
+            try:
+                with open(products_json_path, "r", encoding="utf-8") as f:
+                    prods = json.load(f)
+                for p in prods:
+                    cursor.execute("""
+                        INSERT INTO products (name, category, size, color, cost_price, sale_price, stock_quantity, description)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        p["name"],
+                        p.get("category", "Boshqa"),
+                        ", ".join(p.get("sizes", [])) if isinstance(p.get("sizes"), list) else str(p.get("sizes", "")),
+                        ", ".join(p.get("colors", [])) if isinstance(p.get("colors"), list) else str(p.get("colors", "")),
+                        round(float(p.get("price", 0)) * 0.7, 2),
+                        float(p.get("price", 0)),
+                        int(p.get("stock", 0)),
+                        ", ".join(p.get("aliases", [])) if isinstance(p.get("aliases"), list) else ""
+                    ))
+            except Exception:
+                pass
 
     conn.commit()
     conn.close()
