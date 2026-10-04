@@ -14,6 +14,19 @@ class OrderMatcher:
     - Ko'p bosqichli buyurtma oqimini xatosiz yakunlash
     """
 
+    WORD_TO_NUM = {
+        "bitta": 1, "bir dona": 1, "bir ta": 1, "bir": 1,
+        "ikkita": 2, "ikki dona": 2, "ikki": 2,
+        "uchta": 3, "uch dona": 3, "uch": 3,
+        "to'rtta": 4, "tortta": 4, "toʻrtta": 4, "to‘rtta": 4, "to’rtta": 4, "to'rt": 4, "tort": 4,
+        "beshta": 5, "besh dona": 5, "besh": 5,
+        "oltita": 6, "olti dona": 6, "olti": 6,
+        "yettita": 7, "yetti dona": 7, "yetti": 7,
+        "sakkizta": 8, "sakkiz dona": 8, "sakkiz": 8,
+        "to'qqizta": 9, "toqqizta": 9, "to'qqiz": 9,
+        "o'nta": 10, "onta": 10, "o'n": 10
+    }
+
     KEYWORD_MAP = {
         1: ["qora kurtka", "erkaklar kurtka", "erkaklar qora kurtkasi", "kurtka", "qora kurtkasi", "куртка"],
         2: ["oversize futbolka", "oq futbolka", "qora futbolka", "futbolka", "futbolkasi", "футболка"],
@@ -85,7 +98,14 @@ class OrderMatcher:
                             if prod and prod.get("stock_quantity", 0) > 0:
                                 return prod
 
-        # 6. Oxirgi zaxira: umumiy so'zlar
+        # 6. Dinamik qidiruv: Yangi qo'shilgan tovarlar bazasidan to'liq qidirish
+        all_prods = DatabaseManager.get_products(in_stock_only=True)
+        for p in all_prods:
+            p_name = p.get("name", "").lower()
+            if p_name and p_name in t_low:
+                return p
+
+        # 7. Oxirgi zaxira: umumiy so'zlar
         if any(w in t_low for w in ["krasovka", "krossovka", "poyabzal"]):
             return DatabaseManager.get_product_by_id(8)
         if any(w in t_low for w in ["kurtka"]):
@@ -228,19 +248,29 @@ class OrderMatcher:
     def calculate_quote(cls, text: str) -> Optional[str]:
         """
         Qoida 5: Jami summani kod hisoblaydi (AI arifmetika qilmaydi).
-        Masalan: "2 ta kurtka qancha bo'ladi?", "3 ta kepka narxi qancha?"
+        Masalan: "2 ta kurtka qancha bo'ladi?", "ikkita kepka narxi qancha?", "3 ta kepka narxi qancha?"
         """
         if not text:
             return None
         t_low = text.lower()
 
-        qty_match = re.search(r"(\d+)\s*(?:ta|dona|shtuk)", t_low)
-        is_asking_total = any(w in t_low for w in ["qancha", "necha pul", "jami", "bo'ladi", "boladi", "summa", "narxi"])
+        is_asking_total = any(w in t_low for w in ["qancha", "necha pul", "jami", "bo'ladi", "boladi", "summa", "narxi", "qanchadan"])
+        if not is_asking_total:
+            return None
 
-        if qty_match and is_asking_total:
+        qty = None
+        # 1. Raqamlar orqali qidirish: "2 ta", "3 dona"
+        qty_match = re.search(r"(\d+)\s*(?:ta|dona|shtuk)", t_low)
+        if qty_match:
             qty = int(qty_match.group(1))
-            if qty <= 0:
-                return None
+        else:
+            # 2. So'z bilan yozilgan sonlar: "ikkita", "uchta", "bitta", "to'rtta"
+            for word, val in cls.WORD_TO_NUM.items():
+                if re.search(rf"\b{re.escape(word)}\b", t_low):
+                    qty = val
+                    break
+
+        if qty and qty > 0:
             prod = cls.match_product(text)
             if prod:
                 total_sum = qty * float(prod["sale_price"])
@@ -293,7 +323,7 @@ class OrderMatcher:
     @classmethod
     def extract_order_details(cls, text: str, has_pending_order: bool = False) -> Optional[Dict[str, Any]]:
         """
-        Xabar ichidan telefon va manzilni ajratib olish.
+        Xabar ichidan telefon, manzil va miqdorni aniq ajratib olish.
         Qoida 1: Faqat mijoz sotib olish niyatini bildirganida yoki pending buyurtmasi bo'lganda ishlaydi.
         """
         if not text:
@@ -340,19 +370,44 @@ class OrderMatcher:
         has_order_intent = any(o in t_low for o in order_triggers)
 
         if (has_pending_order or has_order_intent) and has_address:
-            addr = text.replace(phone_raw, "")
-            for trg in ["buyurtma", "zakaz", "olaman", "yetkazing", "olib keling", "olmoqchiman", "bering", "yuboring", "sotib olaman"]:
-                addr = re.sub(re.escape(trg), "", addr, flags=re.IGNORECASE)
-            addr = re.sub(r"(?:manzilim|manzil|tel|telefon|telefonim|nomerim|nomer)\s*[:=-]?", "", addr, flags=re.IGNORECASE).strip()
-            addr = re.sub(r"^[,.\s\-]+|[,.\s\-]+$", "", addr).strip()
+            # Miqdorni aniqlash (Default 1)
+            qty = 1
+            qty_match = re.search(r"(\d+)\s*(?:ta|dona|shtuk)", t_low)
+            if qty_match:
+                qty = max(1, int(qty_match.group(1)))
+            else:
+                for word, val in cls.WORD_TO_NUM.items():
+                    if re.search(rf"\b{re.escape(word)}\b", t_low):
+                        qty = val
+                        break
+
+            # Toza manzilni ajratish
+            manzil_m = re.search(r"(?:manzil(?:im)?|adres(?:im)?)\s*[:=-]?\s*([^,\n\r]+)", text, flags=re.IGNORECASE)
+            if manzil_m:
+                addr = manzil_m.group(1).strip()
+            else:
+                addr = text.replace(phone_raw, "")
+                for trg in ["buyurtma", "zakaz", "olaman", "yetkazing", "olib keling", "olmoqchiman", "bering", "yuboring", "sotib olaman"]:
+                    addr = re.sub(re.escape(trg), "", addr, flags=re.IGNORECASE)
+                prod = cls.match_product(text)
+                if prod:
+                    addr = re.sub(re.escape(prod["name"]), "", addr, flags=re.IGNORECASE)
+                for w in cls.WORD_TO_NUM.keys():
+                    addr = re.sub(rf"\b{re.escape(w)}\b", "", addr, flags=re.IGNORECASE)
+                addr = re.sub(r"(?:manzilim|manzil|tel|telefon|telefonim|nomerim|nomer)\s*[:=-]?", "", addr, flags=re.IGNORECASE).strip()
+                addr = re.sub(r"^[,.\s\-]+|[,.\s\-]+$", "", addr).strip()
+
             if not addr or len(addr) < 3:
                 addr = "Markaz (Kuryer telefon orqali aniqlashtiradi)"
 
             return {
                 "phone": std_phone,
                 "address": addr,
+                "quantity": qty,
                 "is_complete": True
             }
+
+        return None
 
         return None
 

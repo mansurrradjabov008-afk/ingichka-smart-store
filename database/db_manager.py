@@ -6,12 +6,18 @@ from config import DB_PATH
 def get_connection():
     conn = sqlite3.connect(DB_PATH, timeout=30.0)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON;")
+    conn.execute("PRAGMA busy_timeout = 30000;")
     return conn
 
 
 def init_db():
     conn = get_connection()
     cursor = conn.cursor()
+    
+    # 0. Performance & Concurrency Pragmas
+    cursor.execute("PRAGMA journal_mode = WAL;")
+    cursor.execute("PRAGMA synchronous = NORMAL;")
     
     # 1. Products Table
     cursor.execute("""
@@ -81,6 +87,15 @@ def init_db():
         FOREIGN KEY (product_id) REFERENCES products (id)
     );
     """)
+
+    # 5. Performance Indexes
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_products_active ON products(is_active);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_telegram_id);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_order_items_product ON order_items(product_id);")
 
     conn.commit()
     conn.close()

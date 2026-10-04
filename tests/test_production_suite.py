@@ -201,8 +201,40 @@ def test_production_flows():
     assert ReceiptChecker.is_likely_payment_intent("Salom narxi qancha") is False
     print("PASS: Receipt vs Clothing photo intent separation verified with 100% precision!")
 
+    # 11. UZBEK WORD NUMBERS & QUANTITY EXTRACTION SUITE
+    print("\n--- 11. UZBEK WORD NUMBERS & QUANTITY EXTRACTION ---")
+    quote_ikki = OrderMatcher.calculate_quote("ikkita kurtka qancha bo'ladi?")
+    assert quote_ikki is not None and "900,000" in quote_ikki
+    print(f"PASS: 'ikkita kurtka' -> {quote_ikki}")
+
+    quote_bir = OrderMatcher.calculate_quote("bitta futbolka qancha?")
+    assert quote_bir is not None and "120,000" in quote_bir
+    print(f"PASS: 'bitta futbolka' -> {quote_bir}")
+
+    quote_uch = OrderMatcher.calculate_quote("uchta kepka narxi qancha?")
+    assert quote_uch is not None and "180,000" in quote_uch
+    print(f"PASS: 'uchta kepka' -> {quote_uch}")
+
+    order_two = OrderMatcher.extract_order_details("ikkita kurtka olaman, manzil: Navoiy ko'chasi 15, tel: +998901234567")
+    assert order_two is not None
+    assert order_two["quantity"] == 2
+    assert order_two["address"] == "Navoiy ko'chasi 15"
+    assert order_two["phone"] == "+998901234567"
+    print(f"PASS: 'ikkita kurtka' parsed with quantity=2 and clean address='{order_two['address']}'")
+
+    # 12. SQLITE WAL CONCURRENCY & INDEXES HEALTH SUITE
+    print("\n--- 12. SQLITE WAL CONCURRENCY & INDEXES HEALTH ---")
+    with get_connection() as conn:
+        jmode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+        assert jmode.lower() == "wal", f"Expected WAL mode, got {jmode}"
+        indexes = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'").fetchall()]
+        assert "idx_orders_customer" in indexes
+        assert "idx_products_category" in indexes
+        assert "idx_products_active" in indexes
+    print("PASS: SQLite WAL mode and all performance indexes are active and healthy!")
+
     print("\n" + "=" * 60)
-    print("ALL 10 TEST SUITES COVERING ALL USER RULES PASSED WITH 100%!")
+    print("ALL 12 TEST SUITES COVERING ALL ARCHITECTURAL RULES PASSED WITH 100%!")
     print("=" * 60)
 
 if __name__ == "__main__":

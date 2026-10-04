@@ -22,6 +22,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeybo
 from aiogram.filters import CommandStart, Command
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest
+from aiogram.types.error_event import ErrorEvent
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
 
@@ -45,7 +46,7 @@ from services.order_matcher import OrderMatcher
 from services.store_settings_manager import StoreSettingsManager
 from bot.keyboards import (
     get_main_menu, get_category_keyboard, get_report_periods_keyboard,
-    get_order_action_keyboard, get_phone_request_keyboard, get_channel_buy_button
+    get_order_action_keyboard, get_phone_request_keyboard, get_location_request_keyboard, get_channel_buy_button
 )
 
 log_file_path = Path(__file__).resolve().parent.parent / "logs" / "bot_live.log"
@@ -199,12 +200,14 @@ async def cmd_start(message: types.Message):
             if prod and prod["stock_quantity"] > 0:
                 set_pending_order(user_id, prod)
                 display_name = clean_display_name(message.from_user.first_name)
+                stock = prod.get("stock_quantity", 0)
+                stock_label = f"🔥 Shoshiling, oxirgi {stock} ta qoldi!" if stock <= 2 and stock > 0 else f"{stock} dona mavjud"
                 card_text = (
                     f"✨ **Ajoyib tanlov!**\n\n"
                     f"🛍️ **Mahsulot:** **{prod['name']}**\n"
                     f"📏 **O'lcham:** {prod['size']} | **Rang:** {prod['color']}\n"
                     f"💰 **Narxi:** **{prod['sale_price']:,.0f} so'm**\n"
-                    f"📊 **Omborda:** {prod['stock_quantity']} dona mavjud\n\n"
+                    f"📊 **Omborda:** {stock_label}\n\n"
                     f"To'lovni tovar yoqqanidan so'ng qilasiz (naqd yoki karta).\n\n"
                     f"📦 **Buyurtmani tasdiqlash uchun:**\n"
                     f"Iltimos, pastdagi **'📱 Telefon raqamimni yuborish'** tugmasini bosing yoki telefon raqamingiz va manzilingizni yozib yuboring 👇"
@@ -267,9 +270,9 @@ async def handle_contact_message(message: types.Message):
             text=(
                 f"📱 Telefon raqamingiz qabul qilindi: `{phone}` ✅\n\n"
                 f"🛍️ Tanlangan tovar: **{pending_prod['name']}** ({pending_prod['sale_price']:,.0f} so'm)\n\n"
-                f"Endi yetkazish manzilingizni (ko'cha, uy raqami yoki taniqli mo'ljal) yozib yuboring."
+                f"Endi yetkazish manzilingizni yozib yuboring yoki pastdagi **'📍 Geolokatsiyamni yuborish'** tugmasini bosing 👇"
             ),
-            reply_markup=get_main_menu(is_admin=user_id in ADMIN_TELEGRAM_IDS)
+            reply_markup=get_location_request_keyboard()
         )
     else:
         await safe_send(
@@ -280,6 +283,86 @@ async def handle_contact_message(message: types.Message):
             ),
             reply_markup=get_main_menu(is_admin=user_id in ADMIN_TELEGRAM_IDS)
         )
+
+# Foydalanuvchi Telegram orqali geolokatsiya (manzil) yuborganida
+@dp.message(F.location)
+async def handle_location_message(message: types.Message):
+    """Xaridor Telegram orqali geolokatsiya (manzil) yuborganida qabul qilish"""
+    user_id = message.from_user.id
+    user_name = clean_display_name(message.from_user.first_name)
+    lat = message.location.latitude
+    lon = message.location.longitude
+    maps_link = f"https://maps.google.com/?q={lat},{lon}"
+    location_text = f"📍 Geolokatsiya ({lat:.5f}, {lon:.5f}) - {maps_link}"
+
+    # Databasega mijoz manzilini yangilash
+    DatabaseManager.upsert_customer(telegram_id=user_id, full_name=user_name, address=location_text)
+
+    pending_prod = get_pending_order(user_id)
+    customer = DatabaseManager.get_customer(user_id)
+    cust_phone = customer.get("phone") if customer else None
+
+    # Agar ham tovar, ham telefon raqami mavjud bo'lsa -> Buyurtmani darhol yakunlash
+    if pending_prod and cust_phone:
+        stock_check = DatabaseManager.check_stock_strict(pending_prod["id"], 1)
+        if stock_check["available"]:
+            res = DatabaseManager.create_order(
+                customer_telegram_id=user_id,
+                customer_name=user_name,
+                customer_phone=cust_phone,
+                delivery_address=location_text,
+                items=[{"product_id": pending_prod["id"], "quantity": 1}],
+                payment_method="cash_on_delivery",
+                notes=f"Geolokatsiya orqali: {maps_link}"
+            )
+            if res.get("success"):
+                clear_pending_order(user_id)
+                await safe_send(
+                    message.chat.id,
+                    f"🎉 **Buyurtmangiz muvaffaqiyatli qabul qilindi!**\n\n"
+                    f"🧾 Buyurtma raqami: **#{res['order_id']}**\n"
+                    f"🛍️ Mahsulot: **{pending_prod['name']}**\n"
+                    f"💰 Narxi: **{pending_prod['sale_price']:,.0f} so'm**\n"
+                    f"📍 Manzil: [Xaritada ko'rish]({maps_link})\n"
+                    f"📞 Telefon: `{cust_phone}`\n\n"
+                    f"Kuryerimiz tez orada manzilga yetkazib beradi! Rahmat 😊",
+                    reply_markup=get_main_menu(is_admin=user_id in ADMIN_TELEGRAM_IDS)
+                )
+                admin_alert = (
+                    f"🚨 **YANGI BUYURTMA (GEOLOKATSIYA BILAN)!**\n\n"
+                    f"🆔 Buyurtma: #{res['order_id']}\n"
+                    f"👤 Xaridor: {user_name} (ID: `{user_id}`)\n"
+                    f"📞 Telefon: {cust_phone}\n"
+                    f"🛍️ Mahsulot: {pending_prod['name']}\n"
+                    f"💰 Summa: {pending_prod['sale_price']:,.0f} so'm\n"
+                    f"📍 Xarita: {maps_link}"
+                )
+                for aid in ADMIN_TELEGRAM_IDS:
+                    try:
+                        await safe_send(aid, admin_alert, reply_markup=get_order_action_keyboard(res['order_id']))
+                    except Exception:
+                        pass
+                return
+            else:
+                await safe_send(message.chat.id, "Kechirasiz, tanlangan tovar ayni paytda omborda qolmagan.")
+                return
+
+    # Agar tovar bor, lekin telefon raqami yo'q bo'lsa
+    if pending_prod and not cust_phone:
+        await safe_send(
+            message.chat.id,
+            f"📍 Geolokatsiyangiz qabul qilindi!\n\n"
+            f"Endi buyurtmani tasdiqlash uchun pastdagi **'📱 Telefon raqamimni yuborish'** tugmasini bosing yoki telefon raqamingizni yozing 👇",
+            reply_markup=get_phone_request_keyboard()
+        )
+        return
+
+    await safe_send(
+        message.chat.id,
+        f"📍 Geolokatsiyangiz qabul qilindi va eslab qolindi!\n\n"
+        f"Bizning qaysi tovarimizni yetkazib beraylik? Nomini yozing yoki katalogdan tanlang 👇",
+        reply_markup=get_main_menu(is_admin=user_id in ADMIN_TELEGRAM_IDS)
+    )
 
 # Bekor qilish tugmasi
 @dp.message(F.text == "❌ Bekor qilish")
@@ -435,10 +518,21 @@ async def handle_order_done(callback: types.CallbackQuery):
         await callback.answer("Ruxsat yo'q!", show_alert=True)
         return
     order_id = int(callback.data.replace("ord_done_", ""))
+    order = DatabaseManager.get_order_by_id(order_id)
     success = DatabaseManager.update_order_status(order_id, "yakunlandi")
     if success:
         await callback.message.edit_text(f"✅ **Buyurtma #{order_id} muvaffaqiyatli yakunlandi va kassa tushumiga qo'shildi!**")
         await callback.answer("Buyurtma yetkazildi deb belgilandi!", show_alert=True)
+        if order and order.get("customer_telegram_id"):
+            try:
+                await safe_send(
+                    order["customer_telegram_id"],
+                    f"🎉 **Hurmatli xaridor!**\n\n"
+                    f"Sizning **#{order_id}**-sonli buyurtmangiz muvaffaqiyatli yetkazildi! Xaridingiz barakali bo'lsin! 😊\n\n"
+                    f"Bizni tanlaganingiz uchun tashakkur!"
+                )
+            except Exception:
+                pass
 
 @dp.callback_query(F.data.startswith("ord_cancel_"))
 async def handle_order_cancel(callback: types.CallbackQuery):
@@ -446,10 +540,20 @@ async def handle_order_cancel(callback: types.CallbackQuery):
         await callback.answer("Ruxsat yo'q!", show_alert=True)
         return
     order_id = int(callback.data.replace("ord_cancel_", ""))
+    order = DatabaseManager.get_order_by_id(order_id)
     success = DatabaseManager.update_order_status(order_id, "bekor")
     if success:
         await callback.message.edit_text(f"❌ **Buyurtma #{order_id} bekor qilindi va tovar omborga qaytarildi.**")
         await callback.answer("Buyurtma bekor qilindi!", show_alert=True)
+        if order and order.get("customer_telegram_id"):
+            try:
+                await safe_send(
+                    order["customer_telegram_id"],
+                    f"ℹ️ **Hurmatli xaridor!**\n\n"
+                    f"Sizning **#{order_id}**-sonli buyurtmangiz bekor qilindi. Savollaringiz bo'lsa, xodimimiz bilan bog'lanishingiz mumkin."
+                )
+            except Exception:
+                pass
 
 # 4. Reklama / E'lon yuborish (Admin)
 @dp.message(F.text == "📢 Mijozlarga Xabar (Reklama)")
@@ -647,11 +751,13 @@ async def handle_category_select(callback: types.CallbackQuery):
 
     text = [f"✨ **{cat_name} bo'yicha eng yaxshi modellarimiz:**\n"]
     for idx, p in enumerate(prods[:5], 1):
+        stock = p.get('stock_quantity', 0)
+        stock_label = f"🔥 Shoshiling, oxirgi {stock} ta qoldi!" if stock <= 2 and stock > 0 else f"{stock} dona qolgan"
         text.append(
             f"🔹 **{idx}. {p['name']}**\n"
             f"   • O'lcham: {p['size']} | Rang: {p['color']}\n"
             f"   • Narx: **{p['sale_price']:,.0f} so'm**\n"
-            f"   • Omborda: {p['stock_quantity']} dona qolgan\n"
+            f"   • Omborda: {stock_label}\n"
         )
     text.append("Qaysi biri sizga ma'qul bo'ldi? Tanlagan tovaringiz haqida yozishingiz mumkin.")
 
@@ -849,16 +955,17 @@ async def handle_voice_message(message: types.Message):
                 pending_product=USER_PENDING_ORDERS.get(user_id)
             )
             if target_prod:
-                stock_check = DatabaseManager.check_stock_strict(target_prod["id"], 1)
+                qty = order_details.get("quantity", 1)
+                stock_check = DatabaseManager.check_stock_strict(target_prod["id"], qty)
                 if stock_check["available"]:
                     order_res = DatabaseManager.create_order(
                         customer_telegram_id=user_id,
                         customer_name=user_name,
                         customer_phone=order_details["phone"],
                         delivery_address=order_details["address"],
-                        items=[{"product_id": target_prod["id"], "quantity": 1}],
+                        items=[{"product_id": target_prod["id"], "quantity": qty}],
                         payment_method="cash_on_delivery",
-                        notes=f"Ovozli buyurtma: {transcript}"
+                        notes=f"Ovozli buyurtma ({qty} dona): {transcript}"
                     )
                     if order_res["success"]:
                         new_order_id = order_res["order_id"]
@@ -873,11 +980,18 @@ async def handle_voice_message(message: types.Message):
                         )
                         speech_text = f"Rahmat, {user_name}! Buyurtmangiz qabul qilindi. Buyurtmangiz tez orada tayyorlanadi!"
                         voice_file = await VoiceService.text_to_speech(speech_text, filename_prefix=f"ord_v_{user_id}")
-                        if voice_file and os.path.exists(voice_file):
-                            await message.answer_voice(
-                                types.FSInputFile(voice_file),
-                                caption="🎉 **Buyurtmangiz qabul qilindi!**\nBarcha tafsilotlar quyidagi chekda 👇"
-                            )
+                        try:
+                            if voice_file and os.path.exists(voice_file):
+                                await message.answer_voice(
+                                    types.FSInputFile(voice_file),
+                                    caption="🎉 **Buyurtmangiz qabul qilindi!**\nBarcha tafsilotlar quyidagi chekda 👇"
+                                )
+                        finally:
+                            if voice_file and os.path.exists(voice_file):
+                                try:
+                                    os.remove(voice_file)
+                                except Exception:
+                                    pass
                         await safe_send(message.chat.id, confirm_msg)
 
                         admin_alert = OrderMatcher.format_admin_alert(
@@ -886,7 +1000,7 @@ async def handle_voice_message(message: types.Message):
                             user_name=user_name,
                             phone=order_details["phone"],
                             address=order_details["address"],
-                            full_raw=f"Ovozli transkript: {transcript}"
+                            full_raw=f"Ovozli transkript ({qty} dona): {transcript}"
                         )
                         for aid in ADMIN_TELEGRAM_IDS:
                             try:
@@ -923,11 +1037,18 @@ async def handle_voice_message(message: types.Message):
         clean_text_for_tts = VoiceService._clean_for_speech(response_text)
         voice_file = await VoiceService.text_to_speech(clean_text_for_tts, filename_prefix=f"ans_{user_id}")
 
-        if voice_file and os.path.exists(voice_file):
-            await message.answer_voice(
-                types.FSInputFile(voice_file),
-                caption="🎙️ **Madinaxon (Ovozli maslahat)**"
-            )
+        try:
+            if voice_file and os.path.exists(voice_file):
+                await message.answer_voice(
+                    types.FSInputFile(voice_file),
+                    caption="🎙️ **Madinaxon (Ovozli maslahat)**"
+                )
+        finally:
+            if voice_file and os.path.exists(voice_file):
+                try:
+                    os.remove(voice_file)
+                except Exception:
+                    pass
         await safe_send(message.chat.id, response_text)
 
     except Exception as e:
@@ -1151,40 +1272,80 @@ async def handle_private_chat(message: types.Message):
             except Exception:
                 pass
 
-    # 2. Agar xaridor buyurtma tafsilotlarini (telefon va manzil) yuborgan bo'lsa, DB ga yozish
-    phone_match = re.search(r"(\+?998\s?\d{2}\s?\d{3}\s?\d{2}\s?\d{2}|\b\d{9}\b)", text_lower)
-    if phone_match and len(text.strip()) > 15:
+    # 2. Agar xaridor buyurtma tafsilotlarini (telefon va manzil) yuborgan bo'lsa, DB ga yozish va tasdiqlash
+    has_pending = user_id in USER_PENDING_ORDERS
+    order_details = OrderMatcher.extract_order_details(text, has_pending_order=has_pending)
+    if order_details and order_details.get("is_complete"):
         try:
-            target_prod = OrderMatcher.match_product(text, history=ai_brain.conversations.get(message.chat.id, []))
+            target_prod = OrderMatcher.match_product(
+                text,
+                history=ai_brain.conversations.get(message.chat.id, []),
+                pending_product=USER_PENDING_ORDERS.get(user_id)
+            )
             if target_prod:
-                order_res = DatabaseManager.create_order(
-                    customer_telegram_id=user_id,
-                    customer_name=user_name,
-                    customer_phone=phone_match.group(0),
-                    delivery_address=text,
-                    items=[{"product_id": target_prod["id"], "quantity": 1}],
-                    payment_method="cash_on_delivery",
-                    notes=f"LLM buyurtmasi: {text[:150]}"
-                )
-                if order_res.get("success"):
-                    admin_order_alert = (
-                        f"🚨 **YANGI BUYURTMA TUSHDI!**\n\n"
-                        f"👤 **Xaridor:** {user_name}\n"
-                        f"🛍️ **Mahsulot:** {target_prod['name']}\n"
-                        f"💰 **Narxi:** {target_prod['sale_price']:,.0f} so'm\n"
-                        f"📞 **Telefon:** {phone_match.group(0)}\n"
-                        f"📍 **Manzil:** {text}"
+                qty = order_details.get("quantity", 1)
+                stock_check = DatabaseManager.check_stock_strict(target_prod["id"], qty)
+                if stock_check["available"]:
+                    order_res = DatabaseManager.create_order(
+                        customer_telegram_id=user_id,
+                        customer_name=user_name,
+                        customer_phone=order_details["phone"],
+                        delivery_address=order_details["address"],
+                        items=[{"product_id": target_prod["id"], "quantity": qty}],
+                        payment_method="cash_on_delivery",
+                        notes=f"Zakaz ({qty} dona): {text[:150]}"
                     )
-                    for aid in ADMIN_TELEGRAM_IDS:
-                        try:
-                            await safe_send(aid, admin_order_alert)
-                        except Exception:
-                            pass
+                    if order_res.get("success"):
+                        clear_pending_order(user_id)
+                        total_sum = qty * float(target_prod["sale_price"])
+                        confirm_msg = (
+                            f"🎉 **Buyurtmangiz muvaffaqiyatli qabul qilindi!**\n\n"
+                            f"🧾 Buyurtma raqami: **#{order_res['order_id']}**\n"
+                            f"🛍️ Mahsulot: **{target_prod['name']}** ({qty} dona)\n"
+                            f"💰 Jami summa: **{total_sum:,.0f} so'm**\n"
+                            f"📍 Manzil: **{order_details['address']}**\n"
+                            f"📞 Telefon: `{order_details['phone']}`\n\n"
+                            f"Kuryerimiz tez orada siz bilan bog'lanib, buyurtmani yetkazib beradi! Rahmat 😊"
+                        )
+                        await safe_send(message.chat.id, confirm_msg, reply_markup=get_main_menu(is_admin=user_id in ADMIN_TELEGRAM_IDS))
+
+                        admin_alert = OrderMatcher.format_admin_alert(
+                            order_id=order_res["order_id"],
+                            product=target_prod,
+                            user_name=user_name,
+                            phone=order_details["phone"],
+                            address=order_details["address"],
+                            full_raw=f"{text} (Miqdor: {qty} dona)"
+                        )
+                        for aid in ADMIN_TELEGRAM_IDS:
+                            try:
+                                await safe_send(aid, admin_alert, reply_markup=get_order_action_keyboard(order_res["order_id"]))
+                            except Exception:
+                                pass
+                        return
         except Exception as e:
             logger.error(f"Avtomatik buyurtma qaydida xatolik: {e}")
 
-    # Qoida 5: Menyu tugmalari FAQAT /start da chiqadi, savollarga javobda tugma qo'yilmaydi (reply_markup=None)
+    # Savollarga javob qaytarish
     await safe_send(message.chat.id, response, reply_markup=None)
+
+
+# Global Error Handler: Kutilmagan xatolik yuz berganda Webhook 500 qaytarmasligi va Telegram loopga tushmasligi kafolati
+@dp.errors()
+async def global_error_handler(event: ErrorEvent):
+    logger.error(f"Telegram handler xatoligi: {event.exception}", exc_info=event.exception)
+    try:
+        if event.update and event.update.message:
+            await event.update.message.answer(
+                "Kechirasiz, tizimda qisqa uzilish yuz berdi. Iltimos, xabaringizni qaytadan yuboring."
+            )
+        elif event.update and event.update.callback_query:
+            await event.update.callback_query.answer(
+                "Xatolik yuz berdi. Iltimos, qayta urinib ko'ring.", show_alert=True
+            )
+    except Exception:
+        pass
+    return True
 
 
 from aiohttp import web

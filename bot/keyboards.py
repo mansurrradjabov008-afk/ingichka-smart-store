@@ -66,6 +66,17 @@ def get_phone_request_keyboard() -> ReplyKeyboardMarkup:
         one_time_keyboard=True
     )
 
+def get_location_request_keyboard() -> ReplyKeyboardMarkup:
+    """Geolokatsiyani 1-bosishda yuborish klaviaturasi"""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📍 Geolokatsiyamni yuborish", request_location=True)],
+            [KeyboardButton(text="❌ Bekor qilish")]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+
 def get_channel_buy_button(product_id: int, bot_username: str = "Markazsavdo00_bot") -> InlineKeyboardMarkup:
     """Telegram kanal postlari ostidagi xarid tugmasi"""
     clean_bot = bot_username.replace("@", "")
