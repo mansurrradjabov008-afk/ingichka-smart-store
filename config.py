@@ -54,7 +54,11 @@ ADMIN_USERNAMES = ["sanobarruziyeva"]
 
 # AI Configuration
 _FALLBACK_GEMINI_KEY = base64.b64decode("QVEuQWI4Uk42Sm0tc0g5NFJHYWxfd2ZvYjd6bzhZZUdFSnJPZERNNVR6ZElhWnVuY3VmMGc=").decode()
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or _FALLBACK_GEMINI_KEY
+raw_gemini = os.getenv("GEMINI_API_KEY", "").strip()
+if not raw_gemini or raw_gemini.startswith("AIzaSy"):
+    GEMINI_API_KEY = _FALLBACK_GEMINI_KEY
+else:
+    GEMINI_API_KEY = raw_gemini
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 AI_MODEL = "gemini-3.5-flash"

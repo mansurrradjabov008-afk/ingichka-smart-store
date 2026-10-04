@@ -1368,7 +1368,7 @@ import subprocess
 import collections
 from datetime import datetime
 
-CURRENT_VERSION = "v4.1-cloud-uninterrupted"
+CURRENT_VERSION = "v4.2-loop-cured"
 PING_HISTORY = collections.deque(maxlen=30)
 
 def get_current_commit() -> str:

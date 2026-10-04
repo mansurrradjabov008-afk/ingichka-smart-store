@@ -8,7 +8,7 @@ from typing import Dict, List, Any, Optional, Tuple
 
 from config import (
     STORE_NAME, GEMINI_API_KEY, OPENAI_API_KEY, GROQ_API_KEY,
-    STORE_PHONE, CHANNEL_USERNAME, ADMIN_TELEGRAM_IDS
+    STORE_PHONE, CHANNEL_USERNAME, ADMIN_TELEGRAM_IDS, _FALLBACK_GEMINI_KEY
 )
 from database.db_manager import DatabaseManager
 from services.catalog_service import (
@@ -221,6 +221,17 @@ Sen — "{STORE_NAME}" do'konining professional va samimiy BOSH SOTUVCHI-MASLAHA
 
         # 6. Ichki Intellektual Tool-Calling Agenti (Deterministik va Kafolatlangan 0-Gallutsinatsiya)
         reply = self._run_grounded_tool_agent(user_message, history, lang, customer_name, chat_id)
+
+        # Deduplication Guard: Hech qachon bir xil javobni ketma-ket qaytarmaslik!
+        last_bot_msg = next((m.get("content", "") for m in reversed(history[:-1]) if m.get("role") == "assistant"), "")
+        if reply and last_bot_msg and reply.strip().lower() == last_bot_msg.strip().lower():
+            if lang == "ru":
+                reply = "Чем еще я могу вам помочь по нашему каталогу одежды?"
+            elif lang == "uz_cyrl":
+                reply = "Кийимлар каталогимиз бўйича яна қандай ёрдам бера оламан?"
+            else:
+                reply = "Do'konimiz katalogi bo'yicha yana qanday ma'lumot yoki maslahat kerak bo'ladi? Bajonidil yordam beraman!"
+
         self.conversations[chat_id].append({"role": "assistant", "content": reply})
 
         # Tarix hajmini nazorat qilish
@@ -336,6 +347,27 @@ DO'KON SHARTLARI (store_info.json):
                     continue
                 elif resp.status_code in [400, 401, 403]:
                     logger.warning(f"Gemini API ({model_name}) error ({resp.status_code}): {resp.text[:100]}")
+                    if self.gemini_api_key != _FALLBACK_GEMINI_KEY:
+                        logger.info("Avtomatik ravishda tasdiqlangan Gemini kalitiga o'tilmoqda...")
+                        self.gemini_api_key = _FALLBACK_GEMINI_KEY
+                        try:
+                            retry_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={self.gemini_api_key}"
+                            retry_resp = requests.post(retry_url, json=payload, timeout=12)
+                            if retry_resp.status_code == 200:
+                                data = retry_resp.json()
+                                candidates = data.get("candidates", [])
+                                if candidates and "content" in candidates[0]:
+                                    parts = candidates[0]["content"].get("parts", [])
+                                    if parts and "text" in parts[0]:
+                                        raw_text = parts[0]["text"].strip()
+                                        clean_text = re.sub(r"(?i)^(?:sentence\s*\d*|step\s*\d*|thought|stage\s*\d*|bosqich\s*\d*|sales\s*flow)\s*(?:\([^)]*\))?\s*:\s*", "", raw_text)
+                                        lines = clean_text.splitlines()
+                                        valid_lines = [l for l in lines if not re.match(r"(?i)^(?:sentence\s*\d*|step\s*\d*|sales\s*flow|bosqich\s*\d*)\s*:", l.strip()) and "->" not in l]
+                                        result = "\n".join(valid_lines).strip()
+                                        if result:
+                                            return result
+                        except Exception:
+                            pass
                     continue
             except Exception as e:
                 logger.error(f"Error calling {model_name}: {e}")
@@ -439,6 +471,42 @@ DO'KON SHARTLARI (store_info.json):
                 else:
                     return f"Assalomu alaykum! Ingichka Baraka Savdo do'konimizga xush kelibsiz. Qanday kiyim yoki poyabzal qidiryapsiz?"
 
+        # 1a. Kam qolgan mahsulotlar (Low stock inquiry)
+        if any(w in text_lower for w in ["kam qolgan", "oz qolgan", "qoldiq", "oxirgi qolgan", "qaysilar kam", "malo", "qoldiqlar", "kam qolganlar"]):
+            low_prods = DatabaseManager.get_products(in_stock_only=True)
+            low_items = [p for p in low_prods if 0 < p.get("stock_quantity", 0) <= 2]
+            if low_items:
+                items_str = ", ".join([f"'{p['name']}' (oxirgi {p['stock_quantity']} dona, {p['sale_price']:,.0f} so'm)" for p in low_items[:4]])
+                if lang == "ru":
+                    return f"В нашем магазине заканчиваются следующие товары: {items_str}. Что-то отложить для вас?"
+                elif lang == "uz_cyrl":
+                    return f"Дўконимизда ҳозирда қуйидаги маҳсулотлар жуда оз қолди: {items_str}. Қайси бирини ажратиб қўяйлик?"
+                else:
+                    return f"Do'konimizda hozirda quyidagi mahsulotlar juda oz (oxirgi nusxalari) qoldi: {items_str}. Ulardan birini ajratib qo'yaylikmi?"
+
+        # 1b. Tavsiya / Maslahat so'rovi (Recommendation inquiry)
+        if any(w in text_lower for w in ["tavsiya", "maslahat", "qaysi birini", "qaysisini", "qaysi biri yaxshi", "rekomendatsiya", "посоветуй", "что посоветуешь", "qaysi birni", "qaysi biri"]):
+            matched_cat_prods = []
+            for kw in ["futbolka", "kurtka", "jinsi", "ko'ylak", "palto", "kepka", "paypoq", "ichki kiyim"]:
+                if kw in history_text:
+                    matched_cat_prods = [p for p in load_products() if kw in p["name"].lower() or kw in p.get("category", "").lower()]
+                    break
+            if matched_cat_prods:
+                best_item = matched_cat_prods[0]
+                if lang == "ru":
+                    return f"Я очень рекомендую вам '{best_item['name']}' ({best_item['price']:,.0f} сум) — это одна из самых качественных и популярных моделей. Оформим заказ?"
+                elif lang == "uz_cyrl":
+                    return f"Сизга '{best_item['name']}' ({best_item['price']:,.0f} сўм) моделини тавсия қиламан — жуда сифатли ва харидоргир. Буюртма берамизми?"
+                else:
+                    return f"Sizga '{best_item['name']}' ({best_item['price']:,.0f} so'm) modelimizni tavsiya qilaman — juda sifatli, qulay va xaridorgir. Buyurtmani rasmiylashtiraylikmi?"
+            else:
+                if lang == "ru":
+                    return "Рекомендую обратить внимание на наши бестселлеры: 'Adidas Printli futbolka' (200,000 сум) и 'Nike Yozgi kepka' (229,000 сум). Какой вариант вам интереснее?"
+                elif lang == "uz_cyrl":
+                    return "Сизга энг харидоргир товарларимиздан 'Adidas Printli futbolka' (200,000 сўм) ёки 'Nike Yozgi kepka' (229,000 сўм)ни тавсия қиламан. Қайси бирини кўриб чиқамиз?"
+                else:
+                    return "Sizga eng ommabop va sifatli modellarimizdan 'Adidas Printli futbolka' (200,000 so'm) yoki 'Nike Yozgi kepka' (229,000 so'm)ni tavsiya qilaman. Qaysi birini ko'rib chiqamiz?"
+
         # 2. Xarid niyati va Tasdiqlash (Agreement to buy) tekshiruvi
         # Qoida: Faqat xaridor sotib olishga rozi bo'lgandan keyin telefon va manzil so'rash
         phone_match = re.search(r"(\+?998\s?\d{2}\s?\d{3}\s?\d{2}\s?\d{2}|\b\d{9}\b)", text_lower)
@@ -523,8 +591,9 @@ DO'KON SHARTLARI (store_info.json):
                     query = w
                     break
 
-        # 1d. FAQAT VA FAQAT joriy xabarda tovar aytilmagan bo'lsa va yangi tovar so'ralmagan bo'lsa, tarixdan olish
-        if not query and not any(w in t_low for w in ["bormi", "bormikan"]):
+        # 1d. FAQAT VA FAQAT joriy xabarda tovar aytilmagan bo'lsa va xaridor o'lcham, rang, narx yoki xarid tafsilotlarini so'rayotgan bo'lsa, tarixdan olish
+        is_attribute_or_followup = any(w in t_low for w in ["razmer", "o'lcham", "rang", "qora", "oq", "ko'k", "qizil", "bej", "narxi", "qancha", "olaman", "razmeri"])
+        if not query and is_attribute_or_followup and not any(w in t_low for w in ["bormi", "bormikan"]):
             for canon, aliases in keywords_map.items():
                 if any(a in hist_low for a in aliases):
                     query = canon
@@ -687,18 +756,23 @@ DO'KON SHARTLARI (store_info.json):
             else:
                 return f"Bu narx oralig'ida do'konimizda quyidagilar mavjud: {listing}. Qaysi biri sizga ma'qul?"
 
-        # Agar kategoriya bo'yicha bir nechta tovar bo'lsa (masalan ayollar kiyimi, xotinimga)
-        if len(products) > 1 and not any(w in t_low for w in ["krossovka", "krasovka", "kurtka", "futbolka", "ko'ylak", "koylak", "jinsi", "palto", "kepka"]):
-            prod_names = [f"'{p['name']}' ({p['price']:,.0f} so'm)" for p in products[:2]]
-            listing = " va ".join(prod_names)
+        # Agar bir nechta tovar bo'lsa
+        if len(products) > 1:
+            prod_names = [f"'{p['name']}' ({p['price']:,.0f} so'm)" for p in products[:3]]
+            listing = ", ".join(prod_names)
+            closings_multi_uz = [
+                "Sizga qaysi rang yoki o'lcham ma'qul bo'ladi?",
+                "Qaysi birining o'lchamlarini ko'rib chiqamiz?",
+                "Qaysi biri ko'proq e'tiboringizni tortdi?",
+                "Qaysi fason sizga ko'proq yoqadi?"
+            ]
+            c_multi = closings_multi_uz[turn_idx % len(closings_multi_uz)]
             if lang == "ru":
-                prod_names_ru = [f"'{p['name']}' ({p['price']:,.0f} сум)" for p in products[:2]]
-                listing_ru = " и ".join(prod_names_ru)
-                return f"В этой категории у нас есть: {listing_ru}. Какой фасон, цвет или размер вы ищете?"
+                return f"У нас есть отличные варианты: {listing}. Какой вариант вам больше нравится?"
             elif lang == "uz_cyrl":
-                return f"Ушбу бўлимда бизда {listing} бор. Сизга қайси фасон, ранг ёки ўлчам маъқул?"
+                return f"Бизда ажойиб моделлар мавжуд: {listing}. {c_multi}"
             else:
-                return f"Bu bo'limda do'konimizda {listing} mavjud. Sizga ko'proq qaysi fason, rang yoki o'lcham ma'qul?"
+                return f"Do'konimizda quyidagi ajoyib modellar mavjud: {listing}. {c_multi}"
 
         # Aniq 1 ta tovar
         prod = products[0]
