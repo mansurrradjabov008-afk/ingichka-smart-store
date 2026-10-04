@@ -948,7 +948,17 @@ PRODUCTS_RAW = [
         "status": "Mavjud",
         "aliases": ["lc waikiki shim", "klassik shim", "yashil shim", "lc waikiki klassik"]
     }
-]
+CATEGORY_IMAGE_MAP = {
+    'Futbolka': 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=600',
+    'Jinsi': 'https://images.unsplash.com/photo-1542272604-780c96856592?w=600',
+    'Ko\'ylak': 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=600',
+    'Kurtka': 'https://images.unsplash.com/photo-1551028719-00167b16eac5?w=600',
+    'Palto': 'https://images.unsplash.com/photo-1539533018447-63fcce667883?w=600',
+    'Shim': 'https://images.unsplash.com/photo-1473966968600-fa801b869a1a?w=600',
+    'Kepka': 'https://images.unsplash.com/photo-1588850561407-ed78c282e89b?w=600',
+    'Paypoq': 'https://images.unsplash.com/photo-1586350977771-b3b0abd50c82?w=600',
+    'Ichki kiyim': 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=600'
+}
 
 def build_inventory():
     print(f"Jami {len(PRODUCTS_RAW)} ta tovar qayta ishlanmoqda...")
@@ -973,7 +983,8 @@ def build_inventory():
             "min_stock": p["min_stock"],
             "supplier": p["supplier"],
             "status": p["status"],
-            "aliases": p["aliases"]
+            "aliases": p["aliases"],
+            "image_url": CATEGORY_IMAGE_MAP.get(p["category"], "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=600")
         })
 
     # Write products.json atomically (Rule 4)

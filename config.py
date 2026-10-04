@@ -49,7 +49,10 @@ import base64
 # Telegram Configuration
 _FALLBACK_BOT_TOKEN = "8663033870:AAE3xTwk_k5-dxbeSSKUdl2ZZwgFGyh_cJA"
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or _FALLBACK_BOT_TOKEN
+ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "").strip()
 ADMIN_TELEGRAM_IDS = [int(i) for i in os.getenv("ADMIN_TELEGRAM_IDS", "0").split(",") if i.strip() and i.strip() != "0"]
+if ADMIN_CHAT_ID and ADMIN_CHAT_ID.lstrip("-").isdigit() and int(ADMIN_CHAT_ID) not in ADMIN_TELEGRAM_IDS:
+    ADMIN_TELEGRAM_IDS.append(int(ADMIN_CHAT_ID))
 ADMIN_USERNAMES = ["sanobarruziyeva"]
 
 # AI Configuration

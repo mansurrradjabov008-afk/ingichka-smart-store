@@ -140,7 +140,71 @@ class OrderMatcher:
                 if cat_prods:
                     return cat_prods[0]
 
-        return None
+    @classmethod
+    def match_products_multi(
+        cls,
+        text: str,
+        history: Optional[List[Dict[str, str]]] = None,
+        max_limit: int = 3
+    ) -> List[Dict[str, Any]]:
+        """
+        Mijoz so'ragan yoki qidirgan mahsulotlarni topish (Task 2).
+        Bir nechta mahsulot mos kelsa max 3 ta gacha qaytaradi.
+        """
+        if not text:
+            return []
+
+        t_low = text.lower().strip()
+
+        # 1. Aniq ID yoki SKU bo'lsa (bitta mahsulot)
+        if re.search(r"\b(?:kk[-_\s]?)(\d{4})\b", t_low) or re.search(r"(?:#|buy_|id\s*|tovar\s*|mahsulot\s*)(\d{1,3})", t_low):
+            single = cls.match_product(text, history=history)
+            return [single] if single else []
+
+        all_prods = DatabaseManager.get_products(in_stock_only=False)
+
+        # 2. Toifa (kategoriya) bo'yicha ko'plik
+        cat_triggers = {
+            "futbolka": "Futbolka",
+            "jinsi": "Jinsi",
+            "ko'ylak": "Ko'ylak",
+            "koylak": "Ko'ylak",
+            "kurtka": "Kurtka",
+            "palto": "Palto",
+            "paypoq": "Paypoq",
+            "kepka": "Kepka",
+            "ichki kiyim": "Ichki kiyim",
+            "shim": "Shim",
+            "krossovka": "Krossovka",
+            "krasovka": "Krossovka",
+            "poyabzal": "Poyabzal"
+        }
+        for kw, cat_name in cat_triggers.items():
+            if kw in t_low:
+                matches = [
+                    p for p in all_prods
+                    if cat_name.lower() in p.get("category", "").lower() or cat_name.lower() in p.get("name", "").lower()
+                ]
+                if len(matches) > 1:
+                    return matches[:max_limit]
+                elif len(matches) == 1:
+                    return matches
+
+        # 3. Brend bo'yicha
+        for brand in ["zara", "nike", "adidas", "h&m", "lc waikiki", "uztex", "pull&bear", "defacto"]:
+            if brand in t_low:
+                brand_prods = [
+                    p for p in all_prods
+                    if brand in (p.get("brand") or "").lower() or brand in p.get("name", "").lower()
+                ]
+                if len(brand_prods) > 1:
+                    return brand_prods[:max_limit]
+                elif len(brand_prods) == 1:
+                    return brand_prods
+
+        # 4. Yagona mahsulotni aniqlash
+        single = cls.match_product(text, history=history)
+        return [single] if single else []
 
     @classmethod
     def _match_ordinal_from_history(cls, text: str, history: List[Dict[str, str]]) -> Optional[Dict[str, Any]]:

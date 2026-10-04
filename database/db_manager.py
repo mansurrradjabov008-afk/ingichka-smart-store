@@ -199,6 +199,49 @@ class DatabaseManager:
         return dict(row) if row else None
 
     @staticmethod
+    def restock_product(product_id: int, quantity: int) -> Dict[str, Any]:
+        """Omborga yangi tovar kiritish (Restock). Qoldiqni oshirish va bazani yangilash."""
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT * FROM products WHERE id = ?", (product_id,))
+            prod = cursor.fetchone()
+            if not prod:
+                return {"success": False, "message": f"ID #{product_id} bo'yicha mahsulot topilmadi"}
+
+            old_stock = prod["stock_quantity"]
+            new_stock = old_stock + quantity
+            cursor.execute("UPDATE products SET stock_quantity = ? WHERE id = ?", (new_stock, product_id))
+            conn.commit()
+
+            # products.json ni ham yangilash (Rule 4: atomic write)
+            try:
+                from services.catalog_service import load_products, PRODUCTS_FILE
+                from utils.file_utils import atomic_write_json
+                prods = load_products()
+                for p in prods:
+                    if p.get("id") == product_id:
+                        p["stock"] = new_stock
+                        break
+                atomic_write_json(str(PRODUCTS_FILE), prods, indent=2)
+            except Exception:
+                pass
+
+            return {
+                "success": True,
+                "product_id": product_id,
+                "name": prod["name"],
+                "old_stock": old_stock,
+                "added_qty": quantity,
+                "new_stock": new_stock
+            }
+        except Exception as e:
+            conn.rollback()
+            return {"success": False, "message": str(e)}
+        finally:
+            conn.close()
+
+    @staticmethod
     def check_stock_strict(product_id: int, requested_qty: int = 1) -> Dict[str, Any]:
         """Nol gallutsinatsiya kafolati: Ombor qoldig'ini qat'iy tekshirish"""
         product = DatabaseManager.get_product_by_id(product_id)

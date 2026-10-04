@@ -29,7 +29,8 @@ from aiohttp import web
 from config import (
     BOT_TOKEN, ADMIN_TELEGRAM_IDS, STORE_NAME, LOCATION, DELIVERY_ZONE, STORE_SETTINGS,
     GEMINI_API_KEY, OPENAI_API_KEY, GROQ_API_KEY,
-    STORE_PHONE, CHANNEL_USERNAME, CHANNEL_URL, WORKING_HOURS, CHANNEL_ID, ADMIN_USERNAMES
+    STORE_PHONE, CHANNEL_USERNAME, CHANNEL_URL, WORKING_HOURS, CHANNEL_ID, ADMIN_USERNAMES,
+    ADMIN_CHAT_ID
 )
 
 from database.db_manager import DatabaseManager, init_db
@@ -49,6 +50,9 @@ from services.promo_manager import PromoManager
 from services.order_tracker import OrderTracker
 from services.review_manager import ReviewManager
 from services.recommendation_engine import RecommendationEngine
+from services.waitlist_service import WaitlistService
+from services.stock_advisor import StockAdvisor, PENDING_WAITLIST_OFFERS
+from services.media_service import send_product_presentation, format_product_caption
 from bot.keyboards import (
     get_main_menu, get_category_keyboard, get_report_periods_keyboard,
     get_order_action_keyboard, get_phone_request_keyboard, get_location_request_keyboard,
@@ -101,12 +105,19 @@ def clear_pending_order(user_id: int):
 PROMO_WAITING_USERS: set = set()
 CHECKOUT_WAITING_USERS: Dict[int, Dict[str, Any]] = {}
 
-def is_admin_user(user: Optional[types.User]) -> bool:
-    if not user:
+def is_admin_user(user: Optional[types.User], chat_id: Optional[int] = None) -> bool:
+    if not user and not chat_id:
         return False
-    if user.id in ADMIN_TELEGRAM_IDS:
+    u_id = user.id if user else None
+    c_id = chat_id
+    if ADMIN_CHAT_ID:
+        if (u_id and str(u_id) == str(ADMIN_CHAT_ID)) or (c_id and str(c_id) == str(ADMIN_CHAT_ID)):
+            return True
+    if u_id and u_id in ADMIN_TELEGRAM_IDS:
         return True
-    if user.username and user.username.lower() in [u.lower().replace("@", "") for u in ADMIN_USERNAMES]:
+    if c_id and c_id in ADMIN_TELEGRAM_IDS:
+        return True
+    if user and user.username and user.username.lower() in [u.lower().replace("@", "") for u in ADMIN_USERNAMES]:
         if user.id not in ADMIN_TELEGRAM_IDS:
             ADMIN_TELEGRAM_IDS.append(user.id)
             logger.info(f"Registered admin user by username: @{user.username} (ID: {user.id})")
@@ -512,18 +523,38 @@ async def handle_contact_seller_info(message: types.Message):
 
 
 
-@dp.message(Command("admin"))
 @dp.message(Command("myid"))
-async def cmd_admin_setup(message: types.Message):
+async def cmd_myid(message: types.Message):
     user_id = message.from_user.id
-    if user_id not in ADMIN_TELEGRAM_IDS:
-        ADMIN_TELEGRAM_IDS.append(user_id)
+    is_admin = is_admin_user(message.from_user, chat_id=message.chat.id)
+    status_label = "Do'kon Egasi (Admin)" if is_admin else "Mijoz"
     await safe_send(
         chat_id=message.chat.id,
         text=(
+            f"🆔 Sening Telegram ID: `{user_id}`\n"
+            f"👤 Maqomingiz: **{status_label}**"
+        )
+    )
+
+@dp.message(Command("admin"))
+async def cmd_admin_setup(message: types.Message):
+    user = message.from_user
+    chat_id = message.chat.id
+    user_id = user.id if user else chat_id
+
+    if not is_admin_user(user, chat_id=chat_id):
+        await safe_send(
+            chat_id=chat_id,
+            text=f"Kechirasiz, siz admin emassiz. Sizning Telegram ID: `{user_id}`. Ruxsat olish uchun tizim administratori bilan bog'laning."
+        )
+        return
+
+    await safe_send(
+        chat_id=chat_id,
+        text=(
             f"👑 **Siz muvaffaqiyatli Do'kon Egasi (Admin) sifatida tizimga ulandingiz!**\n\n"
             f"🆔 Sening Telegram ID: `{user_id}`\n\n"
-            f"Endi siz kassa hisobotlari, ombor nazorati va yangi tovar kiritish huquqiga egasiz."
+            f"Endi siz kassa hisobotlari (/hisobot), ombor nazorati (/ombor, /restock) va tovar boshqaruvi huquqiga egasiz."
         ),
         reply_markup=get_main_menu(is_admin=True)
     )
@@ -532,7 +563,7 @@ async def cmd_admin_setup(message: types.Message):
 @dp.message(F.text == "📊 Do'kon Kassa Hisoboti")
 @dp.message(Command("hisobot"))
 async def handle_reports_menu(message: types.Message):
-    if message.from_user.id not in ADMIN_TELEGRAM_IDS:
+    if not is_admin_user(message.from_user, chat_id=message.chat.id):
         await message.answer("Kechirasiz, bu ma'lumot faqat do'kon egasi uchun.")
         return
 
@@ -543,7 +574,7 @@ async def handle_reports_menu(message: types.Message):
 
 @dp.callback_query(F.data.startswith("rep_"))
 async def handle_report_callback(callback: types.CallbackQuery):
-    if callback.from_user.id not in ADMIN_TELEGRAM_IDS:
+    if not is_admin_user(callback.from_user, chat_id=callback.message.chat.id if callback.message else None):
         await callback.answer("Ruxsat berilmagan!", show_alert=True)
         return
 
@@ -561,13 +592,77 @@ async def handle_report_callback(callback: types.CallbackQuery):
 @dp.message(F.text == "⚠️ Ombor va Zakazlar")
 @dp.message(Command("ombor"))
 async def handle_inventory_alerts(message: types.Message):
-    if message.from_user.id not in ADMIN_TELEGRAM_IDS:
+    if not is_admin_user(message.from_user, chat_id=message.chat.id):
         await message.answer("Kechirasiz, bu ma'lumot faqat do'kon egasi uchun.")
         return
 
     alerts = InventoryManager.get_stock_alerts()
     text = InventoryManager.format_inventory_message(alerts)
     await safe_send(message.chat.id, text)
+
+# 2b. Restock buyrug'i (Admin only - Task 2)
+@dp.message(Command("restock"))
+async def handle_restock_command(message: types.Message):
+    user = message.from_user
+    chat_id = message.chat.id
+    user_id = user.id if user else chat_id
+
+    # 1. Adminlik tekshiruvi (Rule 5: check ADMIN_CHAT_ID)
+    if not is_admin_user(user, chat_id=chat_id):
+        await safe_send(chat_id, "Kechirasiz, ushbu buyruq faqat do'kon ma'muri (admin) uchun ruxsat etilgan!")
+        return
+
+    # 2. Argumentlar: /restock <product_id> <qty>
+    text = (message.text or "").strip()
+    parts = text.split()
+    if len(parts) < 3:
+        await safe_send(chat_id, "ℹ️ Foydalanish: `/restock <product_id> <qty>`\nMasalan: `/restock 10 5`")
+        return
+
+    try:
+        product_id = int(parts[1])
+        quantity = int(parts[2])
+        if quantity <= 0:
+            await safe_send(chat_id, "❌ Miqdor 0 dan katta butun son bo'lishi kerak.")
+            return
+    except ValueError:
+        await safe_send(chat_id, "❌ Noto'g'ri format. Mahsulot ID va miqdorini raqamda kiriting.\nMasalan: `/restock 10 5`")
+        return
+
+    # 3. Ombor qoldig'ini yangilash (SQLite va products.json - atomic)
+    res = DatabaseManager.restock_product(product_id, quantity)
+    if not res.get("success"):
+        await safe_send(chat_id, f"❌ Xatolik: {res.get('message', 'Mahsulot topilmadi')}")
+        return
+
+    prod_name = res.get("name", f"#{product_id}")
+    new_stock = res.get("new_stock", quantity)
+
+    # 4. Waitlist dagi mijozlarga bir martalik xabar va ularni tozalash (Task 2)
+    waiting_users = WaitlistService.clear_product_waitlist(product_id)
+    notified_count = 0
+    for item in waiting_users:
+        w_chat_id = item.get("chat_id")
+        if w_chat_id:
+            notify_text = (
+                f"🎉 **XUSHXABAR! Tovaringiz keldi!**\n\n"
+                f"Siz kutayotgan **{prod_name}** mahsulotimiz omborimizga qayta keldi! (Hozirda {new_stock} dona mavjud)\n\n"
+                f"Hoziroq xarid qilish uchun do'konimizga yozishingiz mumkin 😊"
+            )
+            try:
+                await safe_send(w_chat_id, notify_text)
+                notified_count += 1
+            except Exception as e:
+                log_bot_error(w_chat_id, f"Waitlist mijoziga xabar yetkazishda xatolik: {e}", exc=e)
+
+    await safe_send(
+        chat_id,
+        f"✅ **Mahsulot muvaffaqiyatli to'ldirildi (Restock)!**\n\n"
+        f"📦 Mahsulot: **{prod_name}** (ID: #{product_id})\n"
+        f"➕ Qo'shildi: {quantity} dona\n"
+        f"📊 Yangi qoldiq: {new_stock} dona\n"
+        f"📢 Xabardor qilingan mijozlar: {notified_count} ta"
+    )
 
 # 3. Oxirgi Buyurtmalar (Admin)
 @dp.message(F.text == "📋 Oxirgi Buyurtmalar")
@@ -1556,6 +1651,12 @@ async def handle_private_chat(message: types.Message):
     preferred_name = customer.get("preferred_name") if customer else None
     user_name = clean_display_name(message.from_user.first_name, preferred_name)
 
+    # 00. Waitlist rozilik javobini tekshirish ("Kelganda xabar beraymi?" -> "ha") (Task 2)
+    waitlist_resp = StockAdvisor.handle_waitlist_confirmation(message.chat.id, text)
+    if waitlist_resp:
+        await safe_send(message.chat.id, waitlist_resp)
+        return
+
     # 0. Promokod kutish holati tekshiruvi
     if user_id in PROMO_WAITING_USERS:
         PROMO_WAITING_USERS.remove(user_id)
@@ -1731,6 +1832,49 @@ async def handle_private_chat(message: types.Message):
             alerts = InventoryManager.get_stock_alerts()
             text_inv = InventoryManager.format_inventory_message(alerts)
             await safe_send(message.chat.id, text_inv)
+            return
+
+    # === MAHSULOT VA OMBOR QOIDALARI (Task 2 & Rules 3, 6, 10) ===
+    matched_prods = OrderMatcher.match_products_multi(
+        text,
+        history=ai_brain.conversations.get(message.chat.id, [])
+    )
+    first_matched = matched_prods[0] if matched_prods else None
+
+    if first_matched:
+        # Stock qoidalarini deterministik tekshirish (Rule 6, Rule 10, Task 2: Stock rules in CODE)
+        stock_eval = StockAdvisor.evaluate_stock_rules(text, first_matched)
+        if stock_eval:
+            if stock_eval["type"] == "sold_out":
+                PENDING_WAITLIST_OFFERS[message.chat.id] = first_matched["id"]
+                await safe_send(message.chat.id, stock_eval["reply"])
+                return
+            elif stock_eval["type"] == "quantity_above_stock":
+                await safe_send(message.chat.id, stock_eval["reply"])
+                return
+
+        # Mahsulot haqida so'ralgan yoki qidirilgan bo'lsa, rasmli taqdimot yuborish (Task 2: Requirements 1 & 2)
+        product_query_triggers = [
+            "bormi", "bor mi", "narxi", "qancha", "necha", "rasm", "rasmi", "foto",
+            "kursat", "ko'rsat", "koʻrsat", "haqida", "ma'lumot", "olmoqchiman",
+            "tavsiya", "variant", "razmer", "o'lcham", "kurtka", "krossovka", "krasovka",
+            "futbolka", "shim", "ko'ylak", "koylak", "palto", "paypoq", "kepka",
+            "zara", "nike", "adidas", "uztex", "defacto", "pull&bear", "h&m"
+        ]
+        is_asking_product = (
+            any(w in text_lower for w in product_query_triggers)
+            or bool(re.search(r"\b(?:kk[-_\s]?)(\d{4})\b", text_lower))
+            or bool(re.search(r"(?:#|buy_|id\s*|tovar\s*|mahsulot\s*)(\d{1,3})", text_lower))
+            or (first_matched.get("name", "").lower() in text_lower)
+        )
+        if is_asking_product:
+            set_pending_order(user_id, first_matched)
+            await send_product_presentation(
+                bot=bot,
+                chat_id=message.chat.id,
+                products=matched_prods[:3],
+                safe_send_fn=safe_send
+            )
             return
 
     # Typing action
