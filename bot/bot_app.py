@@ -1350,6 +1350,16 @@ async def global_error_handler(event: ErrorEvent):
 
 from aiohttp import web
 
+import subprocess
+
+CURRENT_VERSION = "v3.1-sales-master"
+
+def get_current_commit() -> str:
+    try:
+        return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL).decode().strip()
+    except Exception:
+        return "latest"
+
 async def handle_health_check(request):
     return web.Response(text="MarkazSavdo Ingichka AI Bot is 100% LIVE and Running 24/7!", status=200)
 
@@ -1357,6 +1367,8 @@ async def handle_status(request):
     prods = DatabaseManager.get_products(in_stock_only=False)
     data = {
         "status": "healthy",
+        "version": CURRENT_VERSION,
+        "commit": get_current_commit(),
         "bot_username": "Markazsavdo00_bot",
         "products_count": len(prods),
         "products": [{"id": p["id"], "name": p["name"], "stock": p["stock_quantity"], "price": p["sale_price"]} for p in prods],
@@ -1364,6 +1376,30 @@ async def handle_status(request):
         "has_token": bool(BOT_TOKEN)
     }
     return web.json_response(data)
+
+async def handle_diag(request):
+    """Render konteyneri ichidagi AI va tizim holatini to'liq tekshirish diagnostikasi"""
+    prods = DatabaseManager.get_products(in_stock_only=False)
+    gemini_alive = False
+    sample_response = ""
+    try:
+        test_out = ai_brain.ask(chat_id=999999999, user_message="krasovka bormi", customer_name="TestMijoz")
+        if test_out:
+            gemini_alive = True
+            sample_response = test_out
+    except Exception as e:
+        sample_response = f"Xato: {e}"
+
+    diag_data = {
+        "status": "online",
+        "version": CURRENT_VERSION,
+        "commit": get_current_commit(),
+        "gemini_working": gemini_alive,
+        "sample_response": sample_response,
+        "total_products": len(prods),
+        "channel_configured": bool(CHANNEL_ID)
+    }
+    return web.json_response(diag_data)
 
 async def self_ping_task(base_url: str = "https://ingichka-smart-store-bot.onrender.com"):
     health_url = f"{base_url.rstrip('/')}/health"
@@ -1439,6 +1475,7 @@ def main():
         app.router.add_get("/", handle_health_check)
         app.router.add_get("/health", handle_health_check)
         app.router.add_get("/status", handle_status)
+        app.router.add_get("/diag", handle_diag)
 
         SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path="/webhook")
         setup_application(app, dp, bot=bot)

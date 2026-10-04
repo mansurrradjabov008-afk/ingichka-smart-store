@@ -104,7 +104,10 @@ class SalesAgent:
             "erkak", "erkaklar", "erkaklarning", "erim", "otam", "dadam", "akam", "ukam", "o'zimga", "o'zim", "o'g'lim"
         ])
         is_kids_inquiry = any(w in text_lower for w in ["bola", "bolalar", "go'dak", "kichkintoy"])
-        is_shoes_inquiry = any(w in text_lower for w in ["oyoq kiyim", "poyabzal", "tufli", "etik"])
+        is_shoes_inquiry = any(w in text_lower for w in [
+            "oyoq kiyim", "poyabzal", "tufli", "etik", "krasovka", "krossovka",
+            "krasovkalar", "krossovkalar", "krasovki", "krossovki", "кроссовк", "sneaker"
+        ])
         is_gift_general = any(w in text_lower for w in ["sovg'a", "sovga", "kiyim kerak", "kiyim olmoqchi", "nima tavsiya", "maslahat"])
 
         # Ayollar kiyimi bo'yicha konsultatsiya
@@ -297,11 +300,9 @@ class SalesAgent:
                     "Buyurtmangizni darhol tayyorlaymiz."
                 )
 
-        # 10. Aniq tovar so'rovi (krasovka bormi, kurtka bormi, kepka bormi...)
+        # 10. Aniq tovar so'rovi (krasovka, kurtka, kepka...)
         matched_prod = OrderMatcher.match_product(user_text, history=history)
-        is_asking_availability = any(w in text_lower for w in ["bor", "bormi", "narxi", "qancha", "qanaqa", "razmer", "o'lcham", "rangi"])
-
-        if matched_prod and is_asking_availability:
+        if matched_prod:
             session["product_id"] = matched_prod["id"]
             session["category"] = matched_prod.get("category")
             session["stage"] = "size_color"
@@ -311,20 +312,30 @@ class SalesAgent:
             size_info = f"O'lchamlari: {matched_prod['size']}" if matched_prod.get('size') else ""
             color_info = f"Rangi: {matched_prod['color']}" if matched_prod.get('color') else ""
             details = ", ".join(filter(None, [size_info, color_info]))
-            
+
+            closings_list = [
+                "Sizga qaysi o'lcham to'g'ri keladi, buyurtma rasmiylashtirib beraymi?",
+                "Qaysi o'lchamini ajratib qo'yaylik?",
+                "Qaysi razmer sizga ma'qul bo'ladi?",
+                "O'lchamini bilib beraymi?"
+            ]
+            c_close = closings_list[len(history) % len(closings_list)]
+
             return (
-                f"Ha, albatta bor! Do'konimizda {matched_prod['name']} mavjud.\n"
+                f"Ha, do'konimizda {matched_prod['name']} mavjud!\n"
                 f"{details}.\n"
                 f"Narxi: {matched_prod['sale_price']:,.0f} so'm ({stock_str}).\n"
-                f"Sizga qaysi o'lcham ma'qul, buyurtma rasmiylashtirib beraymi?"
+                f"{c_close}"
             )
 
         # 11. Do'konda yo'q mahsulot so'ralganda (butsa bormi, kitob bormi, telefon bormi...)
         if any(w in text_lower for w in ["bormi", "bormikan", "bormi?"]):
+            missing_match = re.search(r"(\b[\w']+\b)\s+(?:bormi|bormikan)", text_lower)
+            missing_name = missing_match.group(1) if missing_match else "bunday mahsulot"
             return (
-                "Kechirasiz, do'konimizda bunday mahsulot mavjud emas.\n"
-                "Bizda asosan sifatli erkaklar va ayollar kiyimlari, poyabzallar hamda aksessuarlar bor.\n"
-                "Sizga mos kiyim yoki poyabzal tanlashda yordam beraymi?"
+                f"Kechirasiz, do'konimizda {missing_name} mavjud emas.\n"
+                f"Bizda asosan sifatli erkaklar va ayollar kiyimlari, poyabzallar hamda aksessuarlar bor.\n"
+                f"Sizga mos kiyim yoki poyabzal tanlashda yordam beraymi?"
             )
 
         # 12. Salomlashish (Assalomu alaykum, jinsini taxmin qilmasdan - Qoida 6)
@@ -336,10 +347,17 @@ class SalesAgent:
                 f"Bugun sizga qanday kiyim tanlashda yordam beraylik, kim uchun qidiryapsiz?"
             )
 
-        # 13. Boshqa umumiy murojaat
+        # 13. Boshqa umumiy murojaat (Turli xil, samimiy yakunlar - Qoida 2)
+        closings_gen = [
+            "Sizga aynan qanday mahsulot yoki o'lcham kerak, yordam beraymi?",
+            "Qaysi turdagi kiyim yoki poyabzal qidiryapsiz, tanlab beraymi?",
+            "Bugun sizga qanday tovar tanlashda ko'maklashaylik?",
+            "Qidirayotgan mahsulotingiz nomini aytsangiz, narx va o'lchamlarini chiqarib beraman."
+        ]
+        c_gen = closings_gen[len(history) % len(closings_gen)]
         return (
-            "Do'konimizda sifatli erkaklar va ayollar kiyimlari, poyabzallar va aksessuarlar mavjud.\n"
-            "Sizga aynan qanday mahsulot yoki o'lcham kerak, yordam beraymi?"
+            f"Do'konimizda sifatli erkaklar, ayollar kiyimlari va poyabzallar mavjud.\n"
+            f"{c_gen}"
         )
 
     @staticmethod

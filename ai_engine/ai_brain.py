@@ -303,9 +303,9 @@ DO'KON SHARTLARI (store_info.json):
         models_to_try = [
             "gemini-3.5-flash-lite",
             "gemini-3.1-flash-lite",
+            "gemini-flash-latest",
             "gemini-3.6-flash",
-            "gemini-3.8-flash",
-            "gemini-3.5-flash"
+            "gemini-3.8-flash"
         ]
         for model_name in models_to_try:
             try:
@@ -335,8 +335,8 @@ DO'KON SHARTLARI (store_info.json):
                     logger.info(f"{model_name} ({resp.status_code}), next modelga o'tilmoqda...")
                     continue
                 elif resp.status_code in [400, 401, 403]:
-                    logger.warning(f"Gemini API key error ({resp.status_code}): {resp.text[:100]}")
-                    break
+                    logger.warning(f"Gemini API ({model_name}) error ({resp.status_code}): {resp.text[:100]}")
+                    continue
             except Exception as e:
                 logger.error(f"Error calling {model_name}: {e}")
                 continue
@@ -493,7 +493,7 @@ DO'KON SHARTLARI (store_info.json):
         # 1. Query (Mahsulot nomi yoki alias)
         query = None
         keywords_map = {
-            "krossovka": ["krasovka", "krossovka", "krasovki", "krossovki", "кроссовк", "sneaker", "oyoq kiyim", "poyabzal"],
+            "krossovka": ["krasovka", "krossovka", "krasovki", "krossovki", "krasovkalar", "krossovkalar", "кроссовк", "sneaker", "oyoq kiyim", "poyabzal"],
             "kurtka": ["kurtka", "куртка", "jacket"],
             "futbolka": ["futbolka", "футболк", "t-shirt", "mayka"],
             "jinsi": ["jinsi", "shim", "джинсы", "брюки", "jeans"],
@@ -506,20 +506,28 @@ DO'KON SHARTLARI (store_info.json):
             if any(a in t_low for a in aliases):
                 query = canon
                 break
-        
-        # Agar joriy xabarda tovar aytilmagan bo'lsa, tarixdan qidirish
-        if not query:
-            for canon, aliases in keywords_map.items():
-                if any(a in hist_low for a in aliases):
-                    query = canon
-                    break
 
-        # Maxsus: do'konda yo'q tovarlar so'rovi (butsa, kitob, telefon...)
+        # 1b. Joriy xabarda do'konda yo'q yoki yangi tovar so'rovi (masalan: kitob bormi, butsa bormi, telefon...)
         if not query:
-            no_stock_words = ["butsa", "бутсы", "kitob", "книга", "telefon", "телефон", "soat", "часы", "noutbuk"]
+            item_match = re.search(r"(\b[\w']+\b)\s+(?:bormi|bormikan|kerak|olmoqchi|qancha|narxi)", t_low)
+            if item_match:
+                candidate = item_match.group(1).strip()
+                if candidate not in ["sizda", "bizda", "yana", "boshqa", "shu", "menga", "bu", "sizlarda", "ulardan"]:
+                    query = candidate
+
+        # 1c. Do'konda yo'q ma'lum so'zlar
+        if not query:
+            no_stock_words = ["butsa", "бутсы", "kitob", "книга", "telefon", "телефон", "soat", "часы", "noutbuk", "sumka", "sochiq"]
             for w in no_stock_words:
                 if w in t_low:
                     query = w
+                    break
+
+        # 1d. FAQAT VA FAQAT joriy xabarda tovar aytilmagan bo'lsa va yangi tovar so'ralmagan bo'lsa, tarixdan olish
+        if not query and not any(w in t_low for w in ["bormi", "bormikan"]):
+            for canon, aliases in keywords_map.items():
+                if any(a in hist_low for a in aliases):
+                    query = canon
                     break
 
         # 2. Category
@@ -529,15 +537,25 @@ DO'KON SHARTLARI (store_info.json):
         elif any(w in t_low for w in ["erkak", "erkaklar", "erim", "otam", "o'zim", "мужск"]):
             category = "Erkaklar kiyimi"
 
-        # 3. Size
+        # 3. Size (Barcha o'lchamlar va 45-razmer kabi holatlar)
         size = None
-        size_match = re.search(r"\b(xxl|xl|xs|s|m|l|30|32|34|40|41|42|43|44|46|48|50)\b", t_low)
-        if size_match:
-            size = size_match.group(1).upper()
-        elif "razmer" in hist_low:
-            h_match = re.search(r"\b(xxl|xl|xs|s|m|l|30|32|34|40|41|42|43|44|46|48|50)\b", hist_low)
-            if h_match:
-                size = h_match.group(1).upper()
+        size_patterns = [
+            r"(\d{2})\s*(?:-?\s*(?:razmer|o'lcham|chi|lik))",
+            r"(?:razmer|o'lcham|размер)\s*(\d{2})",
+            r"\b(xxl|xl|xs|s|m|l|30|32|34|40|41|42|43|44|45|46|48|50)\b"
+        ]
+        for sp in size_patterns:
+            m = re.search(sp, t_low)
+            if m:
+                size = m.group(1).upper()
+                break
+
+        if not size and "razmer" in hist_low:
+            for sp in size_patterns:
+                h_m = re.search(sp, hist_low)
+                if h_m:
+                    size = h_m.group(1).upper()
+                    break
 
         # 4. Color (Faqat to'liq so'z chegarasi bilan)
         color = None
@@ -577,31 +595,78 @@ DO'KON SHARTLARI (store_info.json):
         System prompt qoidalari asosida javob shakllantirish:
         - Faqat vosita natijasidan javob berish.
         - Agar topilmasa: "Afsuski, hozir yo'q", so'ng yaqin real alternativ.
-        - Maksimal 3 ta jumla.
-        - Bir safarda faqat 1 ta savol.
+        - Mavjud bo'lmagan o'lcham bo'lsa: "bizda faqat X, Y, Z bor" (Qoida 7).
+        - Maksimal 2-3 ta jumla.
+        - Har safar bir xil yakun yozmaslik (Qoida 2).
         - Foydalanuvchi javob bergan savolni qaytarmaslik.
         """
         t_low = user_message.lower()
         hist_text = " ".join([m.get("content", "").lower() for m in history])
 
+        # Dinamik samimiy yakunlar rotatsiyasi (Qoida 2)
+        turn_idx = len(history)
+        closings_uz = [
+            "Sizga qaysi o'lcham to'g'ri keladi?",
+            "Qaysi o'lchamini ajratib qo'yaylik?",
+            "Qaysi razmer sizga ma'qul bo'ladi?",
+            "Qaysi rang yoki fasonini ko'rib chiqamiz?",
+            "O'lchamini bilib beraymi?"
+        ]
+        closings_ru = [
+            "Какой размер вам нужен?",
+            "Какой размер вам подобрать?",
+            "Какой вариант вам больше нравится?",
+            "Какой цвет или размер вы предпочитаете?"
+        ]
+        closing_uz = closings_uz[turn_idx % len(closings_uz)]
+        closing_ru = closings_ru[turn_idx % len(closings_ru)]
+
         # 1. Agar tovar topilmagan bo'lsa (found: False)
         if not tool_result.get("found"):
-            alts = tool_result.get("closest_alternatives", [])
-            alt_names = [f"'{p['name']}' ({p['price']:,.0f} so'm)" for p in alts[:2]]
-            alt_text = " yoki ".join(alt_names) if alt_names else "boshqa sifatli kiyimlarimiz"
+            all_prods = load_products()
+            # Xabardan o'lcham va tovar so'rovi ajratish
+            extracted_query, _, extracted_size, _, _ = self._extract_tool_args(user_message, history)
 
+            # 1a. Qoida 7: O'lcham so'ralgan, lekin aynan shu o'lcham bazada mavjud emas
+            if extracted_size:
+                base_prod = None
+                if extracted_query:
+                    for p in all_prods:
+                        if extracted_query.lower() in p["name"].lower() or any(extracted_query.lower() in a.lower() for a in p.get("aliases", [])):
+                            base_prod = p
+                            break
+                if not base_prod:
+                    for m in reversed(history):
+                        if m.get("role") == "user":
+                            m_text = m.get("content", "").lower()
+                            for p in all_prods:
+                                if any(a.lower() in m_text for a in p.get("aliases", [])) or p["name"].lower() in m_text:
+                                    base_prod = p
+                                    break
+                            if base_prod:
+                                break
+
+                if base_prod:
+                    avail_sizes = ", ".join(base_prod.get("sizes", []))
+                    if lang == "ru":
+                        return f"К сожалению, для {base_prod['name']} нет {extracted_size} размера. У нас есть только размеры: {avail_sizes}. {closing_ru}"
+                    elif lang == "uz_cyrl":
+                        return f"Кечирасиз, {base_prod['name']} учун {extracted_size}-ўлчам мавжуд эмас. Бизда фақат {avail_sizes} бор. Қайси бирини кўриб чиқамиз?"
+                    else:
+                        return f"Kechirasiz, {base_prod['name']} uchun {extracted_size}-o'lcham mavjud emas. Bizda faqat {avail_sizes} bor. {closing_uz}"
+
+            # 1b. Do'konda yo'q mahsulot so'ralganda (kitob, butsa, telefon...)
+            display_item = extracted_query if extracted_query else "bunday mahsulot"
             if lang == "ru":
-                alt_names_ru = [f"'{p['name']}' ({p['price']:,.0f} сум)" for p in alts[:2]]
-                alt_text_ru = " или ".join(alt_names_ru)
-                return f"К сожалению, сейчас нет в наличии. Могу предложить отличную альтернативу: {alt_text_ru}. Хотите посмотреть?"
+                return f"К сожалению, в нашем магазине нет {display_item}. У нас большой выбор качественной одежды и обуви (куртки, футболки, джинсы, платья, кроссовки). Хотите посмотреть что-то из каталога?"
             elif lang == "uz_cyrl":
-                return f"Афсуски, ҳозир йўқ. Лекин бизда муқобил сифатли {alt_text} бор. Қайси бирини кўриб чиқамиз?"
+                return f"Кечирасиз, дўконимизда {display_item} мавжуд эмас. Бизда асосан сифатли кийим ва пойабзаллар (куртка, футболка, шим, кўйлак, кроссовка) бор. Бирортасини кўриб чиқамизми?"
             else:
-                return f"Afsuski, hozir yo'q. Lekin do'konimizda muqobil sifatli {alt_text} mavjud. Qaysi birini ko'rib chiqamiz?"
+                return f"Kechirasiz, do'konimizda {display_item} mavjud emas. Bizda asosan sifatli kiyimlar va poyabzallar (kurtka, futbolka, jinsi, ko'ylak, palto, krossovka) bor. Ulardan birini ko'rib chiqamizmi?"
 
         # 2. Tovar topilgan holat
         products = tool_result.get("products", [])
-        
+
         # Umumiy assortiment so'rovi
         if any(w in t_low for w in ["что у вас", "что есть", "қандай кийимлар", "qanday kiyimlar", "nimalar bor", "barcha tovarlar"]):
             if lang == "ru":
@@ -658,14 +723,14 @@ DO'KON SHARTLARI (store_info.json):
                 return f"{p_name} narxi {p_price} so'm ({p_stock}). Buyurtma rasmiylashtiraylikmi?"
 
         # Savdo bosqichi: Ehtiyoj -> O'lcham/Rang -> Narx -> Tasdiqlash
-        # Agar o'lcham va rang aytilmagan bo'lsa, bittasini so'rash (one question at a time)
+        # Agar o'lcham aytilmagan bo'lsa, o'lcham so'rash (bir safarda bitta savol)
         if not already_has_size and len(prod["sizes"]) > 1:
             if lang == "ru":
-                return f"Да, у нас есть {p_name}! Доступные размеры: {p_sizes}, цена {p_price} сум ({p_stock}). Какой размер вам нужен?"
+                return f"Да, у нас есть {p_name}! Доступные размеры: {p_sizes}, цена {p_price} сум ({p_stock}). {closing_ru}"
             elif lang == "uz_cyrl":
-                return f"Ҳа, дўконимизда {p_name} бор! Ўлчамлари: {p_sizes}, нархи {p_price} сўм ({p_stock}). Сизга қайси ўлчам тўғри келади?"
+                return f"Ҳа, дўконимизда {p_name} бор! Ўлчамлари: {p_sizes}, нархи {p_price} сўм ({p_stock}). {closing_uz}"
             else:
-                return f"Ha, do'konimizda {p_name} bor! O'lchamlari: {p_sizes}, narxi {p_price} so'm ({p_stock}). Sizga qaysi o'lcham to'g'ri keladi?"
+                return f"Ha, do'konimizda {p_name} bor! O'lchamlari: {p_sizes}, narxi {p_price} so'm ({p_stock}). {closing_uz}"
 
         if not already_has_color and len(prod["colors"]) > 1:
             if lang == "ru":
@@ -675,13 +740,20 @@ DO'KON SHARTLARI (store_info.json):
             else:
                 return f"Ajoyib! {p_name} uchun mavjud ranglar: {p_colors}. Qaysi rangni tanlaysiz?"
 
-        # O'lcham va rang allaqachon ma'lum -> Tasdiqlash savoli
+        # O'lcham va rang allaqachon ma'lum -> Tasdiqlash savoli (Turli xil yakunlar - Qoida 2)
+        confirm_closings_uz = [
+            f"Ajoyib, {p_name} omborda bor ({p_stock}), narxi {p_price} so'm. Xarid qilishni tasdiqlaysizmi?",
+            f"{p_name} hozir omborimizda tayyor ({p_stock}), narxi {p_price} so'm. Buyurtma rasmiylashtiraylikmi?",
+            f"Siz tanlagan {p_name} omborda bor ({p_stock}), narxi {p_price} so'm. Yetkazib berish uchun rasmiylashtiramizmi?"
+        ]
+        c_confirm = confirm_closings_uz[turn_idx % len(confirm_closings_uz)]
+
         if lang == "ru":
             return f"Отлично, {p_name} в наличии ({p_stock}), цена {p_price} сум. Оформляем заказ?"
         elif lang == "uz_cyrl":
             return f"Ажойиб, {p_name} омборда бор ({p_stock}), нархи {p_price} сўм. Буюртмани расмийлаштирамизми?"
         else:
-            return f"Ajoyib, {p_name} omborda bor ({p_stock}), narxi {p_price} so'm. Xarid qilishni tasdiqlaysizmi?"
+            return c_confirm
 
     @staticmethod
     def _format_order_received(lang: str, customer_name: str) -> str:
