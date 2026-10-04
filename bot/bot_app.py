@@ -56,6 +56,11 @@ from services.media_service import send_product_presentation, format_product_cap
 from services.order_flow_service import OrderFlowService
 from services.sales_intelligence import SalesIntelligence
 from services.handoff_service import HandoffService, BOT_ON_CUSTOMER_MESSAGE
+from services.media_input_service import (
+    MediaInputService, PHOTO_UNRELATED_MSG, PHOTO_SIMILAR_INTRO,
+    PHOTO_API_FALLBACK_MSG, VOICE_API_FALLBACK_MSG, VOICE_EMPTY_TRANSCRIPT_MSG,
+    VOICE_TOO_LONG_MSG, PHOTO_NO_STOCK_MSG
+)
 from bot.keyboards import (
     get_main_menu, get_category_keyboard, get_report_periods_keyboard,
     get_order_action_keyboard, get_order_approval_keyboard, get_phone_request_keyboard, get_location_request_keyboard,
@@ -1443,45 +1448,68 @@ async def handle_photo_message(message: types.Message):
                 )
                 return
 
-        # 2. Gemini Vision bilan kiyimni tahlil qilish
-        response = ai_brain.ask_with_photo(
-            user_id=user_id,
-            image_b64=image_b64,
-            caption=caption,
-            customer_name=user_name
-        )
-        await safe_send(message.chat.id, response)
+        # 2. TASK 6: Gemini Vision orqali qat'iy JSON tahlil va o'xshash tovarlarni topish
+        photo_res = MediaInputService.analyze_photo_with_vision(image_bytes)
+        if not photo_res.get("success"):
+            await safe_send(message.chat.id, photo_res.get("message", PHOTO_UNRELATED_MSG))
+            return
+
+        prods = photo_res.get("products", [])
+        if prods:
+            intro = photo_res.get("intro_message", PHOTO_SIMILAR_INTRO)
+            await safe_send(message.chat.id, intro)
+            await send_product_presentation(
+                bot=bot,
+                chat_id=message.chat.id,
+                products=prods[:3],
+                safe_send_fn=safe_send
+            )
+        else:
+            await safe_send(message.chat.id, photo_res.get("message", PHOTO_NO_STOCK_MSG))
 
     except Exception as e:
         logger.error(f"Rasm bilan ishlashda xatolik: {e}")
-        await message.answer("Rasmingizni qabul qildim! Xuddi shunday sifatli modellarimiz hozir do'konimizda mavjud. Qaysi o'lchamda kiyasiz?")
+        await safe_send(message.chat.id, PHOTO_API_FALLBACK_MSG)
 
-# 8.1 Ovozli xabarlar bilan ishlash (AUDIO SOTUVCHI AGENT)
-@dp.message(F.voice)
+# 8.1 Ovozli xabarlar bilan ishlash (TASK 6: Voice and photo input)
+@dp.message(F.voice | F.audio)
 async def handle_voice_message(message: types.Message):
-    """Xaridor ovozli xabar yuborganida uni tinglab, uning aynan shu savoliga samimiy ovozli xabar bilan javob qaytarish"""
-    user_id = message.from_user.id
-    customer = DatabaseManager.get_customer(user_id)
-    preferred_name = customer.get("preferred_name") if customer else None
-    user_name = clean_display_name(message.from_user.first_name, preferred_name)
+    """
+    TASK 6: Ovozli xabarlar bilan ishlash.
+    1. Davomiylikni tekshirish (<= 60 soniya, aks holda qisqaroq xabar so'rash).
+    2. Yuklab olish va transkripsiya qilish (Gemini yoki Whisper, o'zbek tili qo'llab-quvvatlanadi).
+    3. Agar bo'sh yoki noaniq bo'lsa, qayta gapirish yoki yozishni so'rash.
+    4. Hech qanday ortiqcha narsa ko'rsatmasdan, oddiy xabar kabi qayta ishlash.
+    5. Vaqtinchalik fayllarni tozalash va xatoliklarda xavfsiz javob qaytarish.
+    """
+    user_id = message.from_user.id if message.from_user else message.chat.id
+    voice_obj = message.voice or message.audio
+    duration = voice_obj.duration if voice_obj and voice_obj.duration else 0
 
-    try:
-        await bot.send_chat_action(chat_id=message.chat.id, action="record_voice")
-    except Exception:
-        pass
+    is_valid_dur, dur_err = MediaInputService.validate_voice_duration(duration)
+    if not is_valid_dur:
+        await safe_send(message.chat.id, dur_err)
+        return
 
+    temp_path = None
     try:
-        # 1. Telegramdan ovoz faylini (.ogg) xotiraga yuklab olish
         voice_file_io = io.BytesIO()
-        await bot.download(message.voice, destination=voice_file_io)
+        await bot.download(voice_obj, destination=voice_file_io)
         audio_bytes = voice_file_io.getvalue()
-        audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
+        mime = "audio/ogg" if message.voice else (getattr(message.audio, "mime_type", None) or "audio/mpeg")
 
-        # 2. Audioni transkripsiya qilish (Speech-to-Text)
-        transcript = ai_brain.transcribe_audio(audio_b64, mime_type="audio/ogg")
-        t_low = transcript.lower() if transcript else ""
+        trans_res = MediaInputService.transcribe_audio(audio_bytes, mime_type=mime)
+        if not trans_res.get("success"):
+            await safe_send(message.chat.id, trans_res.get("message", VOICE_EMPTY_TRANSCRIPT_MSG))
+            return
 
-        # 3. Agar ADMIN ovoz orqali yangi tovar qo'shayotgan bo'lsa
+        transcript = trans_res.get("transcript", "").strip()
+        if not transcript:
+            await safe_send(message.chat.id, VOICE_EMPTY_TRANSCRIPT_MSG)
+            return
+
+        # Agar admin ovoz orqali tovar qo'shayotgan bo'lsa (Admin Voice Feature)
+        t_low = transcript.lower()
         if user_id in ADMIN_TELEGRAM_IDS and any(w in t_low for w in ["keldi", "tan narxi", "sotuv narxi", "sotuv", "tovar qo'sh"]):
             parsed = agent.parse_product_voice_text(transcript)
             prod_id = DatabaseManager.add_product(
@@ -1502,131 +1530,22 @@ async def handle_voice_message(message: types.Message):
                 f"📊 Omborda: {parsed['stock_quantity']} dona\n"
                 f"🆔 Mahsulot ID: #{prod_id}"
             )
-            voice_file = await VoiceService.text_to_speech(admin_reply, filename_prefix=f"admin_add_{user_id}")
-            if voice_file and os.path.exists(voice_file):
-                await message.answer_voice(types.FSInputFile(voice_file), caption=admin_reply)
-            else:
-                await safe_send(message.chat.id, admin_reply)
+            await safe_send(message.chat.id, admin_reply)
             return
 
-        # 4. Ovoz orqali buyurtma berilgan bo'lsa (Voice Ordering)
-        has_pending = user_id in USER_PENDING_ORDERS
-        order_details = OrderMatcher.extract_order_details(transcript, has_pending_order=has_pending) if transcript else None
-        if order_details:
-            target_prod = OrderMatcher.match_product(
-                text=transcript,
-                history=ai_brain.conversations.get(user_id, []),
-                pending_product=USER_PENDING_ORDERS.get(user_id)
-            )
-            if target_prod:
-                qty = order_details.get("quantity", 1)
-                stock_check = DatabaseManager.check_stock_strict(target_prod["id"], qty)
-                if stock_check["available"]:
-                    order_res = DatabaseManager.create_order(
-                        customer_telegram_id=user_id,
-                        customer_name=user_name,
-                        customer_phone=order_details["phone"],
-                        delivery_address=order_details["address"],
-                        items=[{"product_id": target_prod["id"], "quantity": qty}],
-                        payment_method="cash_on_delivery",
-                        notes=f"Ovozli buyurtma ({qty} dona): {transcript}"
-                    )
-                    if order_res["success"]:
-                        new_order_id = order_res["order_id"]
-                        clear_pending_order(user_id)
-
-                        confirm_msg = OrderMatcher.format_order_confirmation(
-                            order_id=new_order_id,
-                            product=target_prod,
-                            user_name=user_name,
-                            phone=order_details["phone"],
-                            address=order_details["address"]
-                        )
-                        speech_text = f"Rahmat, {user_name}! Buyurtmangiz qabul qilindi. Buyurtmangiz tez orada tayyorlanadi!"
-                        voice_file = await VoiceService.text_to_speech(speech_text, filename_prefix=f"ord_v_{user_id}")
-                        try:
-                            if voice_file and os.path.exists(voice_file):
-                                await message.answer_voice(
-                                    types.FSInputFile(voice_file),
-                                    caption="🎉 **Buyurtmangiz qabul qilindi!**\nBarcha tafsilotlar quyidagi chekda 👇"
-                                )
-                        finally:
-                            if voice_file and os.path.exists(voice_file):
-                                try:
-                                    os.remove(voice_file)
-                                except Exception:
-                                    pass
-                        await safe_send(message.chat.id, confirm_msg)
-
-                        admin_alert = OrderMatcher.format_admin_alert(
-                            order_id=new_order_id,
-                            product=target_prod,
-                            user_name=user_name,
-                            phone=order_details["phone"],
-                            address=order_details["address"],
-                            full_raw=f"Ovozli transkript ({qty} dona): {transcript}"
-                        )
-                        for aid in ADMIN_TELEGRAM_IDS:
-                            try:
-                                await safe_send(aid, admin_alert, reply_markup=get_order_action_keyboard(new_order_id))
-                            except Exception:
-                                pass
-                        if CHANNEL_ID:
-                            try:
-                                await safe_send(CHANNEL_ID, admin_alert)
-                            except Exception:
-                                pass
-                        return
-
-        # 5. Oddiy ovozli savol bo'lsa
-        if transcript:
-            ext_name = extract_preferred_name(transcript)
-            if ext_name:
-                DatabaseManager.update_customer_preferred_name(user_id, ext_name)
-                user_name = ext_name
-
-            matched_interest = OrderMatcher.match_product(transcript, history=ai_brain.conversations.get(user_id, []))
-            if matched_interest and any(w in t_low for w in ["olaman", "olmoqchiman", "bering", "zakaz", "buyurtma", "yuboring"]):
-                set_pending_order(user_id, matched_interest)
-
-            response_text = ai_brain.ask(
-                user_id=user_id,
-                user_message=transcript,
-                customer_name=user_name
-            )
+        # Show nothing extra, then process the text exactly like a normal message
+        message.text = transcript
+        if message.chat.type == ChatType.PRIVATE:
+            await handle_private_chat(message)
         else:
-            response_text = ai_brain.ask_with_audio(
-                user_id=user_id,
-                audio_b64=audio_b64,
-                mime_type="audio/ogg",
-                customer_name=user_name
-            )
-
-        # 6. Javobni tabiiy o'zbek tili ovoziga (TTS) aylantirish
-        clean_text_for_tts = VoiceService._clean_for_speech(response_text)
-        voice_file = await VoiceService.text_to_speech(clean_text_for_tts, filename_prefix=f"ans_{user_id}")
-
-        try:
-            if voice_file and os.path.exists(voice_file):
-                await message.answer_voice(
-                    types.FSInputFile(voice_file),
-                    caption="🎙️ **Madinaxon (Ovozli maslahat)**"
-                )
-        finally:
-            if voice_file and os.path.exists(voice_file):
-                try:
-                    os.remove(voice_file)
-                except Exception:
-                    pass
-        await safe_send(message.chat.id, response_text)
+            await handle_group_message(message)
 
     except Exception as e:
-        logger.error(f"Ovozli xabarni tahlil qilishda xatolik: {e}")
-        fallback = (
-            f"Assalomu alaykum, {user_name}! Ovozli xabaringizni eshitdim 😊 "
-            f"Do'konimizda barcha sifatli tovarlarimiz mavjud. Qaysi o'lchamda kiyasiz?"
-        )
-        await safe_send(message.chat.id, fallback)
+        logger.error(f"Ovozli xabarni qayta ishlashda xatolik: {e}")
+        await safe_send(message.chat.id, VOICE_API_FALLBACK_MSG)
+    finally:
+        if temp_path:
+            MediaInputService.cleanup_temp_file(temp_path)
 
 # 9. Telegram Guruhlar va Shaxsiy Chatlar (AI Sotuvchi muloqoti + Buyurtma olish)
 @dp.message(F.chat.type.in_([ChatType.GROUP, ChatType.SUPERGROUP]))
