@@ -165,19 +165,25 @@ Sen — "{STORE_NAME}" do'konining professional va samimiy BOSH SOTUVCHI-MASLAHA
    - Agar xaridor operator yoki jonli odam bilan gaplashmoqchi bo'lsa, "Operatorga ulayman" deb javob ber.
 """
 
-    def ask(self, chat_id: int, user_message: str, customer_name: str = "Mijoz") -> str:
+    def ask(self, chat_id: Optional[int] = None, user_message: str = "", customer_name: str = "Mijoz", user_id: Optional[int] = None) -> str:
         """
         Foydalanuvchi xabarini tahlil qilib, oxirgi 10 ta xabar tarixi bilan birga
         LLM vositasi (search_products) va qoidalar asosida javob qaytarish.
         """
-        if chat_id not in self.conversations:
-            self.conversations[chat_id] = []
+        cid = chat_id if chat_id is not None else (user_id if user_id is not None else 0)
+        try:
+            cid = int(cid)
+        except (ValueError, TypeError):
+            cid = 0
+
+        if cid not in self.conversations:
+            self.conversations[cid] = []
 
         # 1. Xabarni tarixga qo'shish
-        self.conversations[chat_id].append({"role": "user", "content": user_message})
+        self.conversations[cid].append({"role": "user", "content": user_message})
 
         # Oxirgi 10 ta xabar (Conversation memory per chat_id)
-        history = self.conversations[chat_id][-10:]
+        history = self.conversations[cid][-10:]
 
         # Foydalanuvchi tilini aniqlash
         lang = self.detect_language(user_message, history)
@@ -185,7 +191,7 @@ Sen — "{STORE_NAME}" do'konining professional va samimiy BOSH SOTUVCHI-MASLAHA
         # 2. Qoida: Operator / Jonli odam so'ralganda
         if self.is_operator_request(user_message):
             self.operator_requests.append({
-                "chat_id": chat_id,
+                "chat_id": cid,
                 "user_name": customer_name,
                 "message": user_message
             })
@@ -196,13 +202,13 @@ Sen — "{STORE_NAME}" do'konining professional va samimiy BOSH SOTUVCHI-MASLAHA
             else:
                 reply = "Operatorga ulayman. Tez orada xodimimiz siz bilan bog'lanadi."
 
-            self.conversations[chat_id].append({"role": "assistant", "content": reply})
+            self.conversations[cid].append({"role": "assistant", "content": reply})
             return reply
 
         # 3. Qoida: Do'kon shartlari (Yetkazib berish, to'lov, qaytarish)
         store_reply = self.check_store_info_inquiry(user_message, lang)
         if store_reply:
-            self.conversations[chat_id].append({"role": "assistant", "content": store_reply})
+            self.conversations[cid].append({"role": "assistant", "content": store_reply})
             return store_reply
 
         # 4. Google Gemini chaqiruvi (Haqiqiy Gemini 3.5/3.6/3.8 Flash modeli)
@@ -216,12 +222,12 @@ Sen — "{STORE_NAME}" do'konining professional va samimiy BOSH SOTUVCHI-MASLAHA
 
         # 6. Ichki Intellektual Tool-Calling Agenti (Deterministik va Kafolatlangan 0-Gallutsinatsiya)
         if not reply:
-            reply = self._run_grounded_tool_agent(user_message, history, lang, customer_name, chat_id)
+            reply = self._run_grounded_tool_agent(user_message, history, lang, customer_name, cid)
 
         # UNIVERSAL DEDUPLICATION GUARD: Barcha qatlamlardan chiqqan har qanday javobni tekshirish!
         last_bot_msg = next((m.get("content", "") for m in reversed(history[:-1]) if m.get("role") == "assistant"), "")
         if reply and last_bot_msg and reply.strip().lower() == last_bot_msg.strip().lower():
-            logger.warning(f"Universal deduplication triggered for chat {chat_id}: identical reply intercepted!")
+            logger.warning(f"Universal deduplication triggered for chat {cid}: identical reply intercepted!")
             if lang == "ru":
                 reply = "Чем еще я могу вам помочь по нашему каталогу одежды? Подскажу по размерам и ценам!"
             elif lang == "uz_cyrl":
@@ -229,11 +235,11 @@ Sen — "{STORE_NAME}" do'konining professional va samimiy BOSH SOTUVCHI-MASLAHA
             else:
                 reply = "Kiyimlar katalogimiz bo'yicha yana qanday ma'lumot yoki maslahat kerak bo'ladi? O'lcham va narxlar bo'yicha bajonidil yordam beraman!"
 
-        self.conversations[chat_id].append({"role": "assistant", "content": reply})
+        self.conversations[cid].append({"role": "assistant", "content": reply})
 
         # Tarix hajmini nazorat qilish
-        if len(self.conversations[chat_id]) > 20:
-            self.conversations[chat_id] = self.conversations[chat_id][-20:]
+        if len(self.conversations[cid]) > 20:
+            self.conversations[cid] = self.conversations[cid][-20:]
 
         return reply
 
@@ -316,8 +322,6 @@ DO'KON SHARTLARI (store_info.json):
 
         models_to_try = [
             "gemini-3.5-flash-lite",
-            "gemini-3.1-flash-lite",
-            "gemini-flash-latest",
             "gemini-3.6-flash",
             "gemini-3.8-flash"
         ]
@@ -860,5 +864,133 @@ DO'KON SHARTLARI (store_info.json):
             return "Раҳмат! Буюртмангиз қабул қилинди. Тез орада буюртмани тасдиқлаш учун боғланамиз."
         else:
             return "Rahmat! Buyurtmangiz qabul qilindi. Tez orada buyurtmani tasdiqlash uchun bog'lanamiz."
+
+    def transcribe_audio(self, audio_b64: str, mime_type: str = "audio/ogg") -> Optional[str]:
+        """Gemini Multimodal orqali ovozli xabarni transkripsiya qilish (Speech-to-Text)"""
+        if not self.gemini_api_key or getattr(self, '_gemini_invalid', False):
+            return None
+
+        prompt = "Ushbu ovozli xabarni toza, aniq o'zbek tilida so'zma-so'z matnga aylantir (transcribe). Faqat aytilgan gapni yoz, hech qanday qo'shimcha so'z yoki tushuntirish qo'shma."
+        payload = {
+            "contents": [{
+                "parts": [
+                    {"text": prompt},
+                    {
+                        "inlineData": {
+                            "mimeType": mime_type,
+                            "data": audio_b64
+                        }
+                    }
+                ]
+            }],
+            "generationConfig": {"temperature": 0.1, "maxOutputTokens": 300}
+        }
+        for model in ["gemini-3.5-flash-lite", "gemini-3.6-flash"]:
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.gemini_api_key}"
+                resp = requests.post(url, json=payload, timeout=12)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    candidates = data.get("candidates", [])
+                    if candidates and "content" in candidates[0]:
+                        parts = candidates[0]["content"].get("parts", [])
+                        if parts and "text" in parts[0]:
+                            text = parts[0]["text"].strip()
+                            if text:
+                                return text
+            except Exception as e:
+                logger.error(f"transcribe_audio error with {model}: {e}")
+        return None
+
+    def ask_with_photo(
+        self,
+        user_id: int,
+        image_b64: str,
+        caption: str = "",
+        customer_name: str = "Mijoz",
+        chat_id: Optional[int] = None
+    ) -> str:
+        """Gemini Vision orqali yuborilgan kiyim/poyabzal rasmini tahlil qilib maslahat berish"""
+        cid = chat_id if chat_id is not None else user_id
+        if cid not in self.conversations:
+            self.conversations[cid] = []
+
+        products = load_products()
+        catalog_lines = []
+        for p in products:
+            st = "mavjud" if p.get("stock", 0) > 2 else (f"oxirgi {p.get('stock')} ta qoldi" if p.get("stock", 0) > 0 else "omborda yo'q")
+            sizes = ", ".join(p.get("sizes", []))
+            colors = ", ".join(p.get("colors", []))
+            catalog_lines.append(f"#{p['id']} {p['name']} ({p.get('category')}) - {p.get('price'):,.0f} so'm | Razmer: {sizes} | Rang: {colors} | Holat: {st}")
+        catalog_str = "\n".join(catalog_lines)
+
+        user_prompt = caption.strip() if caption else "Rasmdagi kiyimga o'xshash qanday tovarlaringiz bor?"
+        prompt = f"""Sen — "{STORE_NAME}" do'konining professional sotuvchi-maslahatchisisan.
+Xaridor sizga quyidagi kiyim/poyabzal rasmini yubordi.
+Uning izohi: "{user_prompt}"
+
+QAT'IY QOIDALAR:
+1. Rasmdagi kiyim/buyumni aniqla (turi, rangi, fasoni).
+2. Quyidagi do'konimiz katalogida aynan shu turdagi yoki eng yaqin modellar bormi, tekshir.
+3. Agar bor bo'lsa, xaridorga samimiy va mehmondo'st ohangda tavsiya qil, narxi va mavjud o'lchamlarini bildir.
+4. Javobni qisqa (2-3 jumla), toza o'zbek tilida yoz.
+
+DO'KON KATALOGI:
+{catalog_str}
+"""
+        payload = {
+            "contents": [{
+                "parts": [
+                    {"text": prompt},
+                    {
+                        "inlineData": {
+                            "mimeType": "image/jpeg",
+                            "data": image_b64
+                        }
+                    }
+                ]
+            }],
+            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 300}
+        }
+
+        if self.gemini_api_key and not getattr(self, '_gemini_invalid', False):
+            for model in ["gemini-3.5-flash-lite", "gemini-3.6-flash"]:
+                try:
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.gemini_api_key}"
+                    resp = requests.post(url, json=payload, timeout=12)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        candidates = data.get("candidates", [])
+                        if candidates and "content" in candidates[0]:
+                            parts = candidates[0]["content"].get("parts", [])
+                            if parts and "text" in parts[0]:
+                                reply = parts[0]["text"].strip()
+                                if reply:
+                                    self.conversations[cid].append({"role": "user", "content": f"[Rasm yuborildi]: {user_prompt}"})
+                                    self.conversations[cid].append({"role": "assistant", "content": reply})
+                                    return reply
+                except Exception as e:
+                    logger.error(f"ask_with_photo error with {model}: {e}")
+
+        # Fallback agar Gemini Vision ulanmasa
+        fb_reply = "Rasmingizni ko'rib chiqdim! Xuddi shunday sifatli va chiroyli modellarimiz hozir do'konimizda mavjud. Sizga qaysi o'lcham va rangdagi model ma'qul?"
+        self.conversations[cid].append({"role": "user", "content": f"[Rasm yuborildi]: {user_prompt}"})
+        self.conversations[cid].append({"role": "assistant", "content": fb_reply})
+        return fb_reply
+
+    def ask_with_audio(
+        self,
+        user_id: int,
+        audio_b64: str,
+        mime_type: str = "audio/ogg",
+        customer_name: str = "Mijoz",
+        chat_id: Optional[int] = None
+    ) -> str:
+        """Ovozli xabarni transkripsiya qilib, ask() orqali to'liq javob qaytarish"""
+        cid = chat_id if chat_id is not None else user_id
+        transcript = self.transcribe_audio(audio_b64, mime_type=mime_type)
+        if transcript:
+            return self.ask(chat_id=cid, user_message=transcript, customer_name=customer_name)
+        return "Ovozingizni qabul qildim! Qanday kiyim yoki poyabzal qidiryapsiz, o'lcham va rangingizni aytsangiz, darhol yordam beraman."
 
 ai_brain = AIBrain()
