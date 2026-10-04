@@ -129,6 +129,16 @@ def get_order_action_keyboard(order_id: int) -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
+def get_order_approval_keyboard(order_id: int) -> InlineKeyboardMarkup:
+    """Yangi buyurtma uchun admin tasdiqlash tugmalari (Task 3: Qabul qilindi / Bekor qilish)"""
+    buttons = [
+        [
+            InlineKeyboardButton(text="✅ Qabul qilindi", callback_data=f"ord_done_{order_id}"),
+            InlineKeyboardButton(text="❌ Bekor qilish", callback_data=f"ord_cancel_{order_id}")
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
 def get_review_stars_keyboard(order_id: int) -> InlineKeyboardMarkup:
     """5 yulduzli baholash tugmalari"""
     buttons = [

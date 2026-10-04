@@ -53,9 +53,10 @@ from services.recommendation_engine import RecommendationEngine
 from services.waitlist_service import WaitlistService
 from services.stock_advisor import StockAdvisor, PENDING_WAITLIST_OFFERS
 from services.media_service import send_product_presentation, format_product_caption
+from services.order_flow_service import OrderFlowService
 from bot.keyboards import (
     get_main_menu, get_category_keyboard, get_report_periods_keyboard,
-    get_order_action_keyboard, get_phone_request_keyboard, get_location_request_keyboard,
+    get_order_action_keyboard, get_order_approval_keyboard, get_phone_request_keyboard, get_location_request_keyboard,
     get_channel_buy_button, get_product_card_keyboard, get_cart_keyboard, get_review_stars_keyboard
 )
 from utils.logger import log_bot_error, BOT_LOG_FILE
@@ -297,6 +298,32 @@ async def handle_contact_message(message: types.Message):
     user_name = clean_display_name(message.from_user.first_name)
     DatabaseManager.upsert_customer(telegram_id=user_id, full_name=user_name, phone=phone)
 
+    # Task 3: Agar faol buyurtma oqimi mavjud bo'lsa
+    if OrderFlowService.has_active_flow(message.chat.id):
+        customer = DatabaseManager.get_customer(user_id)
+        step_res = OrderFlowService.process_step(
+            chat_id=message.chat.id,
+            text=phone,
+            user_name=user_name,
+            crm_customer=customer,
+            ai_answer_fn=lambda q: ai_brain.ask(message.chat.id, q, customer_name=user_name)
+        )
+        if step_res.get("reply"):
+            await safe_send(message.chat.id, step_res["reply"])
+        if step_res.get("is_completed") and step_res.get("admin_alert"):
+            admin_alert = step_res["admin_alert"]
+            db_ord_id = step_res.get("db_order_id") or 0
+            kb = get_order_approval_keyboard(db_ord_id)
+            target_admins = list(ADMIN_TELEGRAM_IDS)
+            if ADMIN_CHAT_ID and ADMIN_CHAT_ID.lstrip("-").isdigit() and int(ADMIN_CHAT_ID) not in target_admins:
+                target_admins.append(int(ADMIN_CHAT_ID))
+            for aid in target_admins:
+                try:
+                    await safe_send(aid, admin_alert, reply_markup=kb)
+                except Exception as e:
+                    log_bot_error(aid, f"Failed to send admin order alert: {e}", exc=e)
+        return
+
     # Agar savatchadan ko'p tovarli buyurtma kutilayotgan bo'lsa
     if user_id in CHECKOUT_WAITING_USERS:
         CHECKOUT_WAITING_USERS[user_id]["phone"] = phone
@@ -345,6 +372,32 @@ async def handle_location_message(message: types.Message):
 
     # Databasega mijoz manzilini yangilash
     DatabaseManager.upsert_customer(telegram_id=user_id, full_name=user_name, address=location_text)
+
+    # Task 3: Agar faol buyurtma oqimi mavjud bo'lsa
+    if OrderFlowService.has_active_flow(message.chat.id):
+        customer = DatabaseManager.get_customer(user_id)
+        step_res = OrderFlowService.process_step(
+            chat_id=message.chat.id,
+            text=location_text,
+            user_name=user_name,
+            crm_customer=customer,
+            ai_answer_fn=lambda q: ai_brain.ask(message.chat.id, q, customer_name=user_name)
+        )
+        if step_res.get("reply"):
+            await safe_send(message.chat.id, step_res["reply"])
+        if step_res.get("is_completed") and step_res.get("admin_alert"):
+            admin_alert = step_res["admin_alert"]
+            db_ord_id = step_res.get("db_order_id") or 0
+            kb = get_order_approval_keyboard(db_ord_id)
+            target_admins = list(ADMIN_TELEGRAM_IDS)
+            if ADMIN_CHAT_ID and ADMIN_CHAT_ID.lstrip("-").isdigit() and int(ADMIN_CHAT_ID) not in target_admins:
+                target_admins.append(int(ADMIN_CHAT_ID))
+            for aid in target_admins:
+                try:
+                    await safe_send(aid, admin_alert, reply_markup=kb)
+                except Exception as e:
+                    log_bot_error(aid, f"Failed to send admin order alert: {e}", exc=e)
+        return
 
     pending_prod = get_pending_order(user_id)
     customer = DatabaseManager.get_customer(user_id)
@@ -1019,22 +1072,12 @@ async def handle_fast_buy(callback: types.CallbackQuery):
 
     set_pending_order(user_id, prod)
     customer = DatabaseManager.get_customer(user_id)
-
-    if customer and customer.get("phone") and customer.get("address"):
-        text = (
-            f"⚡️ **Tezkor xarid tasdiqlash:**\n\n"
-            f"🛍 Mahsulot: **{prod['name']}**\n"
-            f"💰 Narxi: **{prod['sale_price']:,.0f} so'm**\n"
-            f"📍 Manzilingiz: **{customer['address']}**\n"
-            f"📱 Telefon: `{customer['phone']}`\n\n"
-            f"Buyurtmani tasdiqlash uchun 'Ha, olaman' deb yozing!"
-        )
-    else:
-        text = (
-            f"⚡️ **Tezkor xarid:** **{prod['name']}** ({prod['sale_price']:,.0f} so'm)\n\n"
-            f"Buyurtmani rasmiylashtirish uchun telefon raqamingiz va manzilingizni yozib yuboring (yoki pastdagi tugmani bosing):"
-        )
-    await callback.message.answer(text, reply_markup=get_phone_request_keyboard())
+    flow_res = OrderFlowService.start_order_flow(
+        chat_id=user_id,
+        initial_product=prod,
+        crm_customer=customer
+    )
+    await callback.message.answer(flow_res["reply"])
     await callback.answer()
 
 # Savatcha interfeysi
@@ -1657,6 +1700,32 @@ async def handle_private_chat(message: types.Message):
         await safe_send(message.chat.id, waitlist_resp)
         return
 
+    # === TASK 3: Faol buyurtma oqimi holat mashinasi (State Machine) ===
+    if OrderFlowService.has_active_flow(message.chat.id):
+        step_res = OrderFlowService.process_step(
+            chat_id=message.chat.id,
+            text=text,
+            user_name=user_name,
+            crm_customer=customer,
+            ai_answer_fn=lambda q: ai_brain.ask(message.chat.id, q, customer_name=user_name)
+        )
+        if step_res.get("reply"):
+            await safe_send(message.chat.id, step_res["reply"])
+
+        if step_res.get("is_completed") and step_res.get("admin_alert"):
+            admin_alert = step_res["admin_alert"]
+            db_ord_id = step_res.get("db_order_id") or 0
+            kb = get_order_approval_keyboard(db_ord_id)
+            target_admins = list(ADMIN_TELEGRAM_IDS)
+            if ADMIN_CHAT_ID and ADMIN_CHAT_ID.lstrip("-").isdigit() and int(ADMIN_CHAT_ID) not in target_admins:
+                target_admins.append(int(ADMIN_CHAT_ID))
+            for aid in target_admins:
+                try:
+                    await safe_send(aid, admin_alert, reply_markup=kb)
+                except Exception as e:
+                    log_bot_error(aid, f"Failed to send admin order alert: {e}", exc=e)
+        return
+
     # 0. Promokod kutish holati tekshiruvi
     if user_id in PROMO_WAITING_USERS:
         PROMO_WAITING_USERS.remove(user_id)
@@ -1853,10 +1922,22 @@ async def handle_private_chat(message: types.Message):
                 await safe_send(message.chat.id, stock_eval["reply"])
                 return
 
+        # Task 3: Agar xaridor to'g'ridan-to'g'ri xarid qilishga rozi bo'lsa (Trigger only when customer agrees to buy)
+        if OrderFlowService.is_buy_intent(text):
+            set_pending_order(user_id, first_matched)
+            flow_res = OrderFlowService.start_order_flow(
+                chat_id=message.chat.id,
+                initial_product=first_matched,
+                initial_text=text,
+                crm_customer=customer
+            )
+            await safe_send(message.chat.id, flow_res["reply"])
+            return
+
         # Mahsulot haqida so'ralgan yoki qidirilgan bo'lsa, rasmli taqdimot yuborish (Task 2: Requirements 1 & 2)
         product_query_triggers = [
             "bormi", "bor mi", "narxi", "qancha", "necha", "rasm", "rasmi", "foto",
-            "kursat", "ko'rsat", "koʻrsat", "haqida", "ma'lumot", "olmoqchiman",
+            "kursat", "ko'rsat", "koʻrsat", "haqida", "ma'lumot",
             "tavsiya", "variant", "razmer", "o'lcham", "kurtka", "krossovka", "krasovka",
             "futbolka", "shim", "ko'ylak", "koylak", "palto", "paypoq", "kepka",
             "zara", "nike", "adidas", "uztex", "defacto", "pull&bear", "h&m"
@@ -1876,6 +1957,22 @@ async def handle_private_chat(message: types.Message):
                 safe_send_fn=safe_send
             )
             return
+
+    # Task 3: Mahsulot nomi aytilmagan bo'lsa ham xarid niyati bo'lsa
+    if OrderFlowService.is_buy_intent(text):
+        target_prod = OrderMatcher.match_product(
+            text,
+            history=ai_brain.conversations.get(message.chat.id, []),
+            pending_product=USER_PENDING_ORDERS.get(user_id)
+        )
+        flow_res = OrderFlowService.start_order_flow(
+            chat_id=message.chat.id,
+            initial_product=target_prod,
+            initial_text=text,
+            crm_customer=customer
+        )
+        await safe_send(message.chat.id, flow_res["reply"])
+        return
 
     # Typing action
     try:
