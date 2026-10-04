@@ -206,31 +206,28 @@ Sen — "{STORE_NAME}" do'konining professional va samimiy BOSH SOTUVCHI-MASLAHA
             return store_reply
 
         # 4. Google Gemini chaqiruvi (Haqiqiy Gemini 3.5/3.6/3.8 Flash modeli)
+        reply = None
         if self.gemini_api_key and not getattr(self, '_gemini_invalid', False):
-            gemini_res = self._call_gemini(user_message, history, lang)
-            if gemini_res:
-                self.conversations[chat_id].append({"role": "assistant", "content": gemini_res})
-                return gemini_res
+            reply = self._call_gemini(user_message, history, lang)
 
         # 5. Tashqi LLM chaqiruvlari (Groq yoki OpenAI)
-        if self.groq_api_key or self.openai_api_key:
-            llm_res = self._call_cloud_llm(user_message, history)
-            if llm_res:
-                self.conversations[chat_id].append({"role": "assistant", "content": llm_res})
-                return llm_res
+        if not reply and (self.groq_api_key or self.openai_api_key):
+            reply = self._call_cloud_llm(user_message, history)
 
         # 6. Ichki Intellektual Tool-Calling Agenti (Deterministik va Kafolatlangan 0-Gallutsinatsiya)
-        reply = self._run_grounded_tool_agent(user_message, history, lang, customer_name, chat_id)
+        if not reply:
+            reply = self._run_grounded_tool_agent(user_message, history, lang, customer_name, chat_id)
 
-        # Deduplication Guard: Hech qachon bir xil javobni ketma-ket qaytarmaslik!
+        # UNIVERSAL DEDUPLICATION GUARD: Barcha qatlamlardan chiqqan har qanday javobni tekshirish!
         last_bot_msg = next((m.get("content", "") for m in reversed(history[:-1]) if m.get("role") == "assistant"), "")
         if reply and last_bot_msg and reply.strip().lower() == last_bot_msg.strip().lower():
+            logger.warning(f"Universal deduplication triggered for chat {chat_id}: identical reply intercepted!")
             if lang == "ru":
-                reply = "Чем еще я могу вам помочь по нашему каталогу одежды?"
+                reply = "Чем еще я могу вам помочь по нашему каталогу одежды? Подскажу по размерам и ценам!"
             elif lang == "uz_cyrl":
-                reply = "Кийимлар каталогимиз бўйича яна қандай ёрдам бера оламан?"
+                reply = "Кийимлар каталогимиз бўйича яна қандай ёрдам бера оламан? Ўлчамлар ва нархлар бўйича ёрдам бераман!"
             else:
-                reply = "Do'konimiz katalogi bo'yicha yana qanday ma'lumot yoki maslahat kerak bo'ladi? Bajonidil yordam beraman!"
+                reply = "Kiyimlar katalogimiz bo'yicha yana qanday ma'lumot yoki maslahat kerak bo'ladi? O'lcham va narxlar bo'yicha bajonidil yordam beraman!"
 
         self.conversations[chat_id].append({"role": "assistant", "content": reply})
 
@@ -247,8 +244,14 @@ Sen — "{STORE_NAME}" do'konining professional va samimiy BOSH SOTUVCHI-MASLAHA
 
         products = load_products()
         store_info = load_store_info()
-        catalog_str = json.dumps(products, ensure_ascii=False, indent=2)
-        store_str = json.dumps(store_info, ensure_ascii=False, indent=2)
+        catalog_lines = []
+        for p in products:
+            st = "mavjud" if p.get("stock", 0) > 2 else (f"oxirgi {p.get('stock')} ta qoldi" if p.get("stock", 0) > 0 else "omborda yo'q")
+            sizes = ", ".join(p.get("sizes", []))
+            colors = ", ".join(p.get("colors", []))
+            catalog_lines.append(f"#{p['id']} {p['name']} ({p.get('category')}) - {p.get('price'):,.0f} so'm | Razmer: {sizes} | Rang: {colors} | Holat: {st} | SKU: {p.get('sku')}")
+        catalog_str = "\n".join(catalog_lines)
+        store_str = json.dumps(store_info, ensure_ascii=False)
 
         system_instruction = f"""Sen — "{STORE_NAME}" do'konining professional va samimiy BOSH SOTUVCHI-MASLAHATCHISIsan.
 
