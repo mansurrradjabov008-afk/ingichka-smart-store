@@ -16,6 +16,7 @@ from services.catalog_service import (
 )
 from ai_engine.grounding_validator import GroundingValidator, OPERATOR_FALLBACK_TEXT
 from services.sales_intelligence import SalesIntelligence, APPLY_DISCOUNT_TOOL_SCHEMA
+from services.handoff_service import HandoffService
 from utils.logger import log_bot_error
 
 logger = logging.getLogger(__name__)
@@ -199,20 +200,21 @@ Sen — "{STORE_NAME}" do'konining professional va samimiy BOSH SOTUVCHI-MASLAHA
         # Foydalanuvchi tilini aniqlash
         lang = self.detect_language(user_message, history)
 
-        # 2. Qoida: Operator / Jonli odam so'ralganda
-        if self.is_operator_request(user_message):
-            self.operator_requests.append({
-                "chat_id": cid,
-                "user_name": customer_name,
-                "message": user_message
-            })
-            if lang == "ru":
-                reply = "Operatorga ulayman. Наш сотрудник свяжется с вами в ближайшее время."
-            elif lang == "uz_cyrl":
-                reply = "Operatorga ulayman. Тез орада ходимимиз сиз билан боғланади."
-            else:
-                reply = "Operatorga ulayman. Tez orada xodimimiz siz bilan bog'lanadi."
-
+        # 2. Qoida: TASK 5 - Inson operatoriga yo'naltirish triggerlari (uz/ru/en, g'azab/shikoyat)
+        is_handoff_trig, handoff_reason = HandoffService.is_handoff_triggered(
+            text=user_message,
+            chat_id=cid,
+            consecutive_unknown_count=HandoffService.get_consecutive_unknown_count(cid)
+        )
+        if is_handoff_trig:
+            handoff_data = HandoffService.start_handoff(
+                chat_id=cid,
+                customer_name=customer_name,
+                username="",
+                reason=handoff_reason,
+                history=history
+            )
+            reply = handoff_data["customer_reply"]
             self.conversations[cid].append({"role": "assistant", "content": reply})
             return reply
 
@@ -286,6 +288,22 @@ Sen — "{STORE_NAME}" do'konining professional va samimiy BOSH SOTUVCHI-MASLAHA
         # TASK 4: Tone - Max 1 emoji per message
         if reply:
             reply = SalesIntelligence.sanitize_emoji_count(reply, max_emojis=1)
+
+        # TASK 5: Ketma-ket 2 marta "I don't know" (noma'lum) javobi berilganda handoff qilish
+        if reply and HandoffService.is_unknown_answer(reply):
+            cnt = HandoffService.increment_consecutive_unknown(cid)
+            if cnt >= 2:
+                handoff_data = HandoffService.start_handoff(
+                    chat_id=cid,
+                    customer_name=customer_name,
+                    username="",
+                    reason="2 consecutive 'I don't know' answers",
+                    history=self.conversations[cid]
+                )
+                reply = handoff_data["customer_reply"]
+                HandoffService.reset_consecutive_unknown(cid)
+        else:
+            HandoffService.reset_consecutive_unknown(cid)
 
         self.conversations[cid].append({"role": "assistant", "content": reply})
 

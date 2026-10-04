@@ -152,6 +152,17 @@ class GroundingValidator:
 
         # 2 marta ham muvaffaqiyatsiz bo'lsa -> Operatorga yo'naltirish va Adminga ogohlantirish
         log_bot_error(chat_id, f"Grounding Guardrail: Returning '{OPERATOR_FALLBACK_TEXT}' and alerting admin.")
+        try:
+            from services.handoff_service import HandoffService
+            HandoffService.start_handoff(
+                chat_id=chat_id,
+                customer_name="Mijoz",
+                username="",
+                reason="Grounding validator failed twice"
+            )
+        except Exception as e:
+            log_bot_error(chat_id, f"Handoff trigger on grounding failure failed: {e}", exc=e)
+
         if admin_notifier:
             try:
                 admin_notifier(chat_id, reason)

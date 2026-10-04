@@ -55,6 +55,7 @@ from services.stock_advisor import StockAdvisor, PENDING_WAITLIST_OFFERS
 from services.media_service import send_product_presentation, format_product_caption
 from services.order_flow_service import OrderFlowService
 from services.sales_intelligence import SalesIntelligence
+from services.handoff_service import HandoffService, BOT_ON_CUSTOMER_MESSAGE
 from bot.keyboards import (
     get_main_menu, get_category_keyboard, get_report_periods_keyboard,
     get_order_action_keyboard, get_order_approval_keyboard, get_phone_request_keyboard, get_location_request_keyboard,
@@ -717,6 +718,41 @@ async def handle_restock_command(message: types.Message):
         f"📊 Yangi qoldiq: {new_stock} dona\n"
         f"📢 Xabardor qilingan mijozlar: {notified_count} ta"
     )
+
+# 2c. /bot_on buyrug'i (Admin only - Task 5)
+@dp.message(Command("bot_on"))
+async def handle_bot_on_command(message: types.Message):
+    user = message.from_user
+    chat_id = message.chat.id
+
+    # 1. Adminlik tekshiruvi (Rule 5)
+    if not is_admin_user(user, chat_id=chat_id):
+        await safe_send(chat_id, "Kechirasiz, ushbu buyruq faqat do'kon ma'muri (admin) uchun ruxsat etilgan!")
+        return
+
+    # 2. Argument: /bot_on <chat_id> yoki reply qilingan xabardan olish
+    parts = (message.text or "").strip().split()
+    target_cid = None
+    if len(parts) > 1 and parts[1].strip().lstrip("-").isdigit():
+        target_cid = int(parts[1].strip())
+    elif message.reply_to_message:
+        target_cid = HandoffService.get_customer_chat_id_from_admin_reply(
+            reply_to_message_id=message.reply_to_message.message_id,
+            reply_to_text=message.reply_to_message.text or message.reply_to_message.caption or ""
+        )
+
+    if not target_cid:
+        await safe_send(chat_id, "ℹ️ Foydalanish: `/bot_on <chat_id>`\nMasalan: `/bot_on 123456789` yoki operator xabarnomasiga reply qilib yuboring.")
+        return
+
+    # 3. Sessiyani yakunlash va botga qaytarish
+    res = HandoffService.resolve_handoff(target_cid, resolved_by="admin_command")
+    if res:
+        # Mijozga xabar yuborish
+        await safe_send(target_cid, BOT_ON_CUSTOMER_MESSAGE)
+        await safe_send(chat_id, f"✅ Chat `{target_cid}` uchun muloqot muvaffaqiyatli botga qaytarildi.")
+    else:
+        await safe_send(chat_id, f"ℹ️ Chat `{target_cid}` faol operator kutish rejimida emas yoki allaqachon botga qaytarilgan.")
 
 # 3. Oxirgi Buyurtmalar (Admin)
 @dp.message(F.text == "📋 Oxirgi Buyurtmalar")
@@ -1673,6 +1709,25 @@ async def handle_group_message(message: types.Message):
 
         await safe_send(message.chat.id, ai_reply, reply_markup=pm_button)
 
+# TASK 5: Adminning reply orqali bergan javobini mijozga yetkazish (Admin reply reaches customer)
+@dp.message(F.reply_to_message)
+async def handle_admin_reply_message(message: types.Message):
+    user = message.from_user
+    chat_id = message.chat.id
+
+    if not is_admin_user(user, chat_id=chat_id):
+        return
+
+    target_chat_id = HandoffService.get_customer_chat_id_from_admin_reply(
+        reply_to_message_id=message.reply_to_message.message_id,
+        reply_to_text=message.reply_to_message.text or message.reply_to_message.caption or ""
+    )
+    if target_chat_id and HandoffService.is_active_session(target_chat_id):
+        admin_text = message.text or message.caption or ""
+        await safe_send(target_chat_id, f"👨‍💼 **Operator:**\n{admin_text}")
+        HandoffService.record_admin_activity(target_chat_id)
+        await message.reply(f"✅ Javobingiz mijozga (ID: `{target_chat_id}`) yetkazildi.")
+
 @dp.message(F.chat.type == ChatType.PRIVATE)
 async def handle_private_chat(message: types.Message):
     if not message.text:
@@ -1694,6 +1749,53 @@ async def handle_private_chat(message: types.Message):
 
     preferred_name = customer.get("preferred_name") if customer else None
     user_name = clean_display_name(message.from_user.first_name, preferred_name)
+
+    # TASK 5: Mijoz handoff holatida bo'lsa (Bot mijozga jim turadi, xabarni adminga yo'naltiradi)
+    is_in_handoff, auto_return_msg = HandoffService.check_and_process_handoff(message.chat.id)
+    if auto_return_msg:
+        # 6 soat sukutdan so'ng avto-qaytarish
+        await safe_send(message.chat.id, auto_return_msg)
+    elif is_in_handoff:
+        # Bot mijozga jim turadi. Xabarni adminga yetkazadi
+        admin_target = HandoffService.get_admin_chat_id()
+        if admin_target:
+            try:
+                cust_uname = f"@{message.from_user.username}" if message.from_user.username else "yo'q"
+                fwd_text = (
+                    f"📩 **[Mijoz xabari]**\n"
+                    f"👤 **Mijoz:** {user_name} ({cust_uname})\n"
+                    f"🆔 **Chat ID:** `{message.chat.id}`\n\n"
+                    f"💬 {text}"
+                )
+                fwd_msg = await bot.send_message(chat_id=admin_target, text=fwd_text)
+                HandoffService.map_admin_message(fwd_msg.message_id, message.chat.id)
+            except Exception as e:
+                log_bot_error(message.chat.id, f"Failed to forward message to admin: {e}", exc=e)
+        return
+
+    # TASK 5: Inson operatoriga yo'naltirish triggerlari (uz/ru/en, g'azab/shikoyat)
+    is_handoff_trig, handoff_reason = HandoffService.is_handoff_triggered(
+        text=text,
+        chat_id=message.chat.id,
+        consecutive_unknown_count=HandoffService.get_consecutive_unknown_count(message.chat.id)
+    )
+    if is_handoff_trig:
+        handoff_data = HandoffService.start_handoff(
+            chat_id=message.chat.id,
+            customer_name=user_name,
+            username=message.from_user.username or "",
+            reason=handoff_reason,
+            history=ai_brain.conversations.get(message.chat.id, [])
+        )
+        await safe_send(message.chat.id, handoff_data["customer_reply"])
+        admin_target = HandoffService.get_admin_chat_id()
+        if admin_target:
+            try:
+                alert_msg = await bot.send_message(chat_id=admin_target, text=handoff_data["admin_message"])
+                HandoffService.map_admin_message(alert_msg.message_id, message.chat.id)
+            except Exception as e:
+                log_bot_error(message.chat.id, f"Failed to send handoff alert to admin: {e}", exc=e)
+        return
 
     # 00. Waitlist rozilik javobini tekshirish ("Kelganda xabar beraymi?" -> "ha") (Task 2)
     waitlist_resp = StockAdvisor.handle_waitlist_confirmation(message.chat.id, text)
@@ -1992,18 +2094,34 @@ async def handle_private_chat(message: types.Message):
         customer_name=user_name
     )
 
-    # 1. Agar foydalanuvchi jonli operator so'ragan bo'lsa yoki Grounding talab etilsa (Rule 8)
+    # 1. TASK 5: Agar operatorga yo'naltirilgan bo'lsa (Handoff trigger: explicit, angry, grounding, 2x unknown)
     if "operatorga ulayman" in response.lower() or "aniqlashtirib, operator javob beradi" in response.lower():
-        admin_alert = (
-            f"🔔 **Mijoz jonli operator / adminga ulanishni so'radi!**\n\n"
-            f"👤 **Mijoz:** {user_name} (ID: `{user_id}`)\n"
-            f"📱 **Username:** @{message.from_user.username or 'mavjud_emas'}\n"
-            f"💬 **Xabar:** {text}\n"
-            f"ℹ️ **Holat:** {response}"
+        sessions = HandoffService._load_sessions()
+        sess = sessions.get(str(message.chat.id))
+        reason = sess.get("reason", "Mijoz operatorga yo'naltirildi") if sess else "Mijoz operator so'radi"
+        summary = sess.get("summary") if (sess and sess.get("summary")) else HandoffService.generate_5_line_summary(
+            chat_id=message.chat.id,
+            history=ai_brain.conversations.get(message.chat.id, []),
+            reason=reason
         )
-        for aid in ADMIN_TELEGRAM_IDS:
+        clean_uname = f"@{message.from_user.username}" if message.from_user.username else "yo'q"
+        admin_alert = (
+            f"🔔 **Mijoz jonli operatorga yo'naltirildi!**\n\n"
+            f"👤 **Mijoz:** {user_name} ({clean_uname})\n"
+            f"🆔 **Chat ID:** `{message.chat.id}`\n"
+            f"⚠️ **Sabab:** {reason}\n\n"
+            f"📝 **Muloqot xulosasi (5 qator):**\n"
+            f"{summary}\n\n"
+            f"💬 *Javob berish uchun ushbu xabarga reply qiling yoki `/bot_on {message.chat.id}` yuboring.*"
+        )
+        target_admins = list(ADMIN_TELEGRAM_IDS)
+        admin_cid = HandoffService.get_admin_chat_id()
+        if admin_cid and admin_cid not in target_admins:
+            target_admins.append(admin_cid)
+        for aid in target_admins:
             try:
-                await safe_send(aid, admin_alert)
+                alert_msg = await bot.send_message(chat_id=aid, text=admin_alert)
+                HandoffService.map_admin_message(alert_msg.message_id, message.chat.id)
             except Exception as e:
                 log_bot_error(aid, f"Failed to alert admin: {e}", exc=e)
 
