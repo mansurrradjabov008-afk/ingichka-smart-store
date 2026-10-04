@@ -14,6 +14,8 @@ from database.db_manager import DatabaseManager
 from services.catalog_service import (
     search_products, load_products, load_store_info, SEARCH_PRODUCTS_TOOL_SCHEMA
 )
+from ai_engine.grounding_validator import GroundingValidator, OPERATOR_FALLBACK_TEXT
+from utils.logger import log_bot_error
 
 logger = logging.getLogger(__name__)
 
@@ -220,6 +222,24 @@ Sen — "{STORE_NAME}" do'konining professional va samimiy BOSH SOTUVCHI-MASLAHA
         if not reply and (self.groq_api_key or self.openai_api_key):
             reply = self._call_cloud_llm(user_message, history)
 
+        # QAT'IY QOIDA 8: Grounding Validator (Tekshirish, 1 marta qayta generatsiya, va operatorga yo'naltirish)
+        if reply:
+            catalog_prods = load_products()
+            def regen_cb(err_reason: str) -> Optional[str]:
+                regen_input = f"{user_message}\n[Grounding Error: {err_reason}. Faqat do'kon katalogidagi aniq tovar, narx va o'lchamlardan foydalaning!]"
+                if self.gemini_api_key and not getattr(self, '_gemini_invalid', False):
+                    return self._call_gemini(regen_input, history, lang)
+                elif self.groq_api_key or self.openai_api_key:
+                    return self._call_cloud_llm(regen_input, history)
+                return None
+
+            reply = GroundingValidator.apply_grounding_guardrail(
+                first_reply=reply,
+                regenerate_fn=regen_cb,
+                catalog_products=catalog_prods,
+                chat_id=cid
+            )
+
         # 6. Ichki Intellektual Tool-Calling Agenti (Deterministik va Kafolatlangan 0-Gallutsinatsiya)
         if not reply:
             reply = self._run_grounded_tool_agent(user_message, history, lang, customer_name, cid)
@@ -315,7 +335,7 @@ DO'KON SHARTLARI (store_info.json):
             "system_instruction": {"parts": [{"text": system_instruction}]},
             "contents": contents,
             "generationConfig": {
-                "temperature": 0.3,
+                "temperature": 0.1,
                 "maxOutputTokens": 350
             }
         }
@@ -403,7 +423,7 @@ DO'KON SHARTLARI (store_info.json):
             "messages": messages,
             "tools": [SEARCH_PRODUCTS_TOOL_SCHEMA],
             "tool_choice": "auto",
-            "temperature": 0.3,
+            "temperature": 0.1,
             "max_tokens": 400
         }
 
@@ -435,7 +455,7 @@ DO'KON SHARTLARI (store_info.json):
                         second_payload = {
                             "model": model,
                             "messages": messages,
-                            "temperature": 0.3,
+                            "temperature": 0.1,
                             "max_tokens": 400
                         }
                         resp2 = requests.post(url, headers=headers, json=second_payload, timeout=15)

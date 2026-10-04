@@ -5,6 +5,7 @@ from openpyxl.utils import get_column_letter
 from datetime import datetime
 from pathlib import Path
 from config import DB_PATH, STORE_NAME
+from utils.file_utils import atomic_write_binary
 
 REPORTS_DIR = Path(__file__).resolve().parent.parent / "reports"
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -159,7 +160,7 @@ class ExcelExporter:
 
         conn.close()
 
-        # Save file
+        # Save file atomically (Rule 4)
         file_path = REPORTS_DIR / f"Ingichka_Kassa_Hisoboti_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-        wb.save(str(file_path))
+        atomic_write_binary(str(file_path), lambda tmp: wb.save(tmp))
         return str(file_path)

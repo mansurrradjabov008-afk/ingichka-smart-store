@@ -54,11 +54,15 @@ from bot.keyboards import (
     get_order_action_keyboard, get_phone_request_keyboard, get_location_request_keyboard,
     get_channel_buy_button, get_product_card_keyboard, get_cart_keyboard, get_review_stars_keyboard
 )
+from utils.logger import log_bot_error, BOT_LOG_FILE
 
 log_file_path = Path(__file__).resolve().parent.parent / "logs" / "bot_live.log"
 log_file_path.parent.mkdir(parents=True, exist_ok=True)
 
-handlers_list = [logging.FileHandler(str(log_file_path), encoding="utf-8")]
+handlers_list = [
+    logging.FileHandler(str(log_file_path), encoding="utf-8"),
+    logging.FileHandler(str(BOT_LOG_FILE), encoding="utf-8")
+]
 if sys.stdout and not getattr(sys.stdout, 'closed', False):
     handlers_list.append(logging.StreamHandler(sys.stdout))
 
@@ -142,12 +146,21 @@ async def safe_send(chat_id: int, text: str, reply_markup=None):
     for idx, chunk in enumerate(chunks):
         markup = reply_markup if idx == len(chunks) - 1 else None
         try:
-            last_msg = await bot.send_message(chat_id=chat_id, text=chunk, parse_mode="Markdown", reply_markup=markup)
+            last_msg = await asyncio.wait_for(
+                bot.send_message(chat_id=chat_id, text=chunk, parse_mode="Markdown", reply_markup=markup),
+                timeout=12.0
+            )
         except TelegramBadRequest:
             clean_text = chunk.replace("**", "").replace("*", "").replace("`", "")
-            last_msg = await bot.send_message(chat_id=chat_id, text=clean_text, reply_markup=markup)
+            try:
+                last_msg = await asyncio.wait_for(
+                    bot.send_message(chat_id=chat_id, text=clean_text, reply_markup=markup),
+                    timeout=12.0
+                )
+            except Exception as e:
+                log_bot_error(chat_id, f"Telegram send_message retry failed: {e}", exc=e)
         except Exception as e:
-            logger.error(f"Xabar yuborishda xatolik: {e}")
+            log_bot_error(chat_id, f"Telegram send_message failed: {e}", exc=e)
     return last_msg
 
 
@@ -1733,19 +1746,20 @@ async def handle_private_chat(message: types.Message):
         customer_name=user_name
     )
 
-    # 1. Agar foydalanuvchi jonli operator so'ragan bo'lsa, adminga darhol bildirishnoma
-    if "operatorga ulayman" in response.lower():
+    # 1. Agar foydalanuvchi jonli operator so'ragan bo'lsa yoki Grounding talab etilsa (Rule 8)
+    if "operatorga ulayman" in response.lower() or "aniqlashtirib, operator javob beradi" in response.lower():
         admin_alert = (
             f"🔔 **Mijoz jonli operator / adminga ulanishni so'radi!**\n\n"
             f"👤 **Mijoz:** {user_name} (ID: `{user_id}`)\n"
             f"📱 **Username:** @{message.from_user.username or 'mavjud_emas'}\n"
-            f"💬 **Xabar:** {text}"
+            f"💬 **Xabar:** {text}\n"
+            f"ℹ️ **Holat:** {response}"
         )
         for aid in ADMIN_TELEGRAM_IDS:
             try:
                 await safe_send(aid, admin_alert)
-            except Exception:
-                pass
+            except Exception as e:
+                log_bot_error(aid, f"Failed to alert admin: {e}", exc=e)
 
     # 2. Agar xaridor buyurtma tafsilotlarini (telefon va manzil) yuborgan bo'lsa, DB ga yozish va tasdiqlash
     has_pending = user_id in USER_PENDING_ORDERS

@@ -14,6 +14,10 @@ class StoreSettingsManager:
         return STORE_SETTINGS.get(key, "").strip()
 
     @classmethod
+    def set_setting(cls, key: str, value: str):
+        STORE_SETTINGS[key] = value.strip()
+
+    @classmethod
     def check_setting_inquiry(cls, text: str) -> Optional[Dict[str, Any]]:
         """
         Xabar ichida yetkazib berish (delivery), chegirma (discount) yoki

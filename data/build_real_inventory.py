@@ -7,6 +7,7 @@ from pathlib import Path
 # Add project root to sys.path
 ROOT_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(ROOT_DIR))
+from utils.file_utils import atomic_write_json
 
 if sys.platform == "win32":
     try:
@@ -975,8 +976,8 @@ def build_inventory():
             "aliases": p["aliases"]
         })
 
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(json_data, f, ensure_ascii=False, indent=2)
+    # Write products.json atomically (Rule 4)
+    atomic_write_json(str(json_path), json_data, indent=2)
     print(f"✅ products.json muvaffaqiyatli saqlandi ({len(json_data)} tovar)!")
 
     # 2. SQLite bazasini to'ldirish
