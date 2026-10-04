@@ -948,16 +948,52 @@ PRODUCTS_RAW = [
         "status": "Mavjud",
         "aliases": ["lc waikiki shim", "klassik shim", "yashil shim", "lc waikiki klassik"]
     }
+]
+
+PRODUCT_IMAGE_MAP = {
+    1: 'https://images.unsplash.com/photo-1581655353564-df123a1eb820?w=600',  # Adidas Printli futbolka Ko'k
+    2: 'https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?w=600',  # Local Brand UZ Oddiy futbolka Ko'k
+    3: 'https://images.unsplash.com/photo-1583743814966-8936f5b7be1a?w=600',  # Nike Polo futbolka Qizil
+    4: 'https://images.unsplash.com/photo-1618354691373-d851c5c3a990?w=600',  # Reebok Sport futbolka Oq
+    12: 'https://images.unsplash.com/photo-1541099649105-f69ad21f3246?w=600', # Adidas Slim fit jinsi Moviy
+    13: 'https://images.unsplash.com/photo-1582552938357-32b906df40cb?w=600', # Bershka Relaxed jinsi Moviy
+    14: 'https://images.unsplash.com/photo-1541099649105-f69ad21f3246?w=600', # Defacto Straight jinsi Bordo
+    15: 'https://images.unsplash.com/photo-1582552938357-32b906df40cb?w=600', # Koton Slim fit jinsi Kulrang
+    16: 'https://images.unsplash.com/photo-1541099649105-f69ad21f3246?w=600', # Zara Straight jinsi Moviy
+    21: 'https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?w=600', # Defacto Yozgi ko'ylak
+    22: 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=600', # Koton Yozgi ko'ylak
+    23: 'https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?w=600', # LC Waikiki Katta tugmali ko'ylak
+    24: 'https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?w=600', # Pull&Bear Klassik ko'ylak
+    25: 'https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?w=600', # Puma Ofis ko'ylagi
+    26: 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=600', # Reebok Yozgi ko'ylak
+    27: 'https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?w=600', # Zara Denim ko'ylak
+    28: 'https://images.unsplash.com/photo-1544923246-77307dd654cb?w=600', # Adidas Parka Moviy
+    29: 'https://images.unsplash.com/photo-1548883354-7622d03aca27?w=600', # H&M Qishki kurtka Pushti
+    30: 'https://images.unsplash.com/photo-1548883354-7622d03aca27?w=600', # H&M Qishki kurtka Sariq
+    31: 'https://images.unsplash.com/photo-1551028719-00167b16eac5?w=600', # Zara Yengil kurtka Bordo
+    32: 'https://images.unsplash.com/photo-1539533113208-f6df8cc8b543?w=600', # Adidas Yengil palto
+    33: 'https://images.unsplash.com/photo-1539533113208-f6df8cc8b543?w=600', # Artel Style Klassik palto
+    34: 'https://images.unsplash.com/photo-1539533113208-f6df8cc8b543?w=600', # Artel Style Uzun palto
+    35: 'https://images.unsplash.com/photo-1539533113208-f6df8cc8b543?w=600', # Koton Klassik palto
+    36: 'https://images.unsplash.com/photo-1539533113208-f6df8cc8b543?w=600', # Local Brand UZ Yengil palto
+    37: 'https://images.unsplash.com/photo-1539533113208-f6df8cc8b543?w=600', # Pull&Bear Yengil palto
+    38: 'https://images.unsplash.com/photo-1539533113208-f6df8cc8b543?w=600', # Puma Uzun palto
+    39: 'https://images.unsplash.com/photo-1539533113208-f6df8cc8b543?w=600', # Zara Yengil palto
+    47: 'https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?w=600', # Artel Style Cargo shim
+    48: 'https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?w=600', # Defacto Chino shim
+    49: 'https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?w=600', # LC Waikiki Klassik shim
+}
+
 CATEGORY_IMAGE_MAP = {
-    'Futbolka': 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=600',
-    'Jinsi': 'https://images.unsplash.com/photo-1542272604-780c96856592?w=600',
-    'Ko\'ylak': 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=600',
+    'Futbolka': 'https://images.unsplash.com/photo-1581655353564-df123a1eb820?w=600',
+    'Jinsi': 'https://images.unsplash.com/photo-1541099649105-f69ad21f3246?w=600',
+    'Ko\'ylak': 'https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?w=600',
     'Kurtka': 'https://images.unsplash.com/photo-1551028719-00167b16eac5?w=600',
-    'Palto': 'https://images.unsplash.com/photo-1539533018447-63fcce667883?w=600',
-    'Shim': 'https://images.unsplash.com/photo-1473966968600-fa801b869a1a?w=600',
+    'Palto': 'https://images.unsplash.com/photo-1539533113208-f6df8cc8b543?w=600',
+    'Shim': 'https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?w=600',
     'Kepka': 'https://images.unsplash.com/photo-1588850561407-ed78c282e89b?w=600',
     'Paypoq': 'https://images.unsplash.com/photo-1586350977771-b3b0abd50c82?w=600',
-    'Ichki kiyim': 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=600'
+    'Ichki kiyim': 'https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=600'
 }
 
 def build_inventory():
@@ -967,6 +1003,7 @@ def build_inventory():
     json_path = ROOT_DIR / "products.json"
     json_data = []
     for p in PRODUCTS_RAW:
+        img = PRODUCT_IMAGE_MAP.get(p["id"]) or CATEGORY_IMAGE_MAP.get(p["category"], "https://images.unsplash.com/photo-1581655353564-df123a1eb820?w=600")
         json_data.append({
             "id": p["id"],
             "sku": p["sku"],
@@ -984,7 +1021,7 @@ def build_inventory():
             "supplier": p["supplier"],
             "status": p["status"],
             "aliases": p["aliases"],
-            "image_url": CATEGORY_IMAGE_MAP.get(p["category"], "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=600")
+            "image_url": img
         })
 
     # Write products.json atomically (Rule 4)
