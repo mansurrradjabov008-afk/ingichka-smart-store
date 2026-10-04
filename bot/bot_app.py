@@ -44,9 +44,15 @@ from services.tenant_manager import TenantManager
 from services.sales_pitch import SalesPitchAdvisor
 from services.order_matcher import OrderMatcher
 from services.store_settings_manager import StoreSettingsManager
+from services.cart_manager import CartManager
+from services.promo_manager import PromoManager
+from services.order_tracker import OrderTracker
+from services.review_manager import ReviewManager
+from services.recommendation_engine import RecommendationEngine
 from bot.keyboards import (
     get_main_menu, get_category_keyboard, get_report_periods_keyboard,
-    get_order_action_keyboard, get_phone_request_keyboard, get_location_request_keyboard, get_channel_buy_button
+    get_order_action_keyboard, get_phone_request_keyboard, get_location_request_keyboard,
+    get_channel_buy_button, get_product_card_keyboard, get_cart_keyboard, get_review_stars_keyboard
 )
 
 log_file_path = Path(__file__).resolve().parent.parent / "logs" / "bot_live.log"
@@ -87,6 +93,9 @@ def get_pending_order(user_id: int, max_age_seconds: int = 7200) -> Optional[Dic
 
 def clear_pending_order(user_id: int):
     USER_PENDING_ORDERS.pop(user_id, None)
+
+PROMO_WAITING_USERS: set = set()
+CHECKOUT_WAITING_USERS: Dict[int, Dict[str, Any]] = {}
 
 def is_admin_user(user: Optional[types.User]) -> bool:
     if not user:
@@ -228,6 +237,7 @@ async def cmd_start(message: types.Message):
         except Exception as e:
             logger.error(f"Deep link error: {e}")
 
+    cart_cnt = CartManager.get_cart_item_count(user_id)
     if is_admin:
         await safe_send(
             chat_id=message.chat.id,
@@ -237,7 +247,7 @@ async def cmd_start(message: types.Message):
                 f"Men 24/7 rejimda mijozlarga xizmat ko'rsataman, buyurtmalarni qabul qilaman va omborni nazorat qilaman.\n\n"
                 f"Quyidagi tugmalar orqali kerakli bo'limni tanlang 👇"
             ),
-            reply_markup=get_main_menu(is_admin=True)
+            reply_markup=get_main_menu(is_admin=True, cart_count=cart_cnt)
         )
     else:
         clean_name = user_name if user_name and user_name != "Mijoz" else ""
@@ -250,7 +260,7 @@ async def cmd_start(message: types.Message):
                 f"Bizda sifatli erkaklar, ayollar, bolalar kiyimlari va poyabzallar mavjud.\n\n"
                 f"Sizga qanday mahsulot yoki kiyim kerak? Bemalol yozishingiz yoki mahsulotlarimizni ko'rishingiz mumkin ✨"
             ),
-            reply_markup=get_main_menu(is_admin=False)
+            reply_markup=get_main_menu(is_admin=False, cart_count=cart_cnt)
         )
 
 # Foydalanuvchi tugmasi orqali telefon raqam yuborilganda
@@ -262,6 +272,20 @@ async def handle_contact_message(message: types.Message):
         phone = "+" + phone
     user_name = clean_display_name(message.from_user.first_name)
     DatabaseManager.upsert_customer(telegram_id=user_id, full_name=user_name, phone=phone)
+
+    # Agar savatchadan ko'p tovarli buyurtma kutilayotgan bo'lsa
+    if user_id in CHECKOUT_WAITING_USERS:
+        CHECKOUT_WAITING_USERS[user_id]["phone"] = phone
+        CHECKOUT_WAITING_USERS[user_id]["stage"] = "address"
+        await safe_send(
+            chat_id=message.chat.id,
+            text=(
+                f"📱 Telefon raqamingiz qabul qilindi: `{phone}` ✅\n\n"
+                f"Endi buyurtmangizni yetkazib berish **manzilini** yozib yuboring (yoki pastdagi geolokatsiya tugmasini bosing) 👇"
+            ),
+            reply_markup=get_location_request_keyboard()
+        )
+        return
 
     pending_prod = get_pending_order(user_id)
     if pending_prod:
@@ -301,6 +325,55 @@ async def handle_location_message(message: types.Message):
     pending_prod = get_pending_order(user_id)
     customer = DatabaseManager.get_customer(user_id)
     cust_phone = customer.get("phone") if customer else None
+
+    # Agar savatchadan ko'p tovarli buyurtma kutilayotgan bo'lsa
+    cart_summary = CartManager.get_cart_summary(user_id)
+    if cart_summary["items"] and user_id in CHECKOUT_WAITING_USERS:
+        phone_to_use = cust_phone or CHECKOUT_WAITING_USERS[user_id].get("phone")
+        if phone_to_use:
+            CHECKOUT_WAITING_USERS.pop(user_id, None)
+            order_items = [{"product_id": i["product_id"], "quantity": i["quantity"]} for i in cart_summary["items"]]
+            order_res = DatabaseManager.create_order(
+                customer_telegram_id=user_id,
+                customer_name=user_name,
+                customer_phone=phone_to_use,
+                delivery_address=location_text,
+                items=order_items,
+                payment_method="cash_on_delivery",
+                notes=f"Savatchadan (Geolokatsiya: {maps_link}, Promo: {cart_summary['promo_code'] or 'yoq'})"
+            )
+            if order_res.get("success"):
+                new_id = order_res["order_id"]
+                CartManager.clear_cart(user_id)
+                if cart_summary["promo_code"]:
+                    PromoManager.register_usage(cart_summary["promo_code"])
+                await safe_send(
+                    message.chat.id,
+                    f"🎉 **BUYURTMANGIZ QABUL QILINDI!**\n\n"
+                    f"🧾 Buyurtma raqami: **#{new_id}**\n"
+                    f"🛍️ Jami tovarlar: {cart_summary['total_items']} dona\n"
+                    f"💰 To'lov summasi: **{cart_summary['final_total']:,.0f} so'm**\n"
+                    f"📍 Manzil: [Xaritada ko'rish]({maps_link})\n"
+                    f"📞 Telefon: `{phone_to_use}`\n\n"
+                    f"Kuryerimiz tez orada manzilga yetkazib beradi! Rahmat 😊",
+                    reply_markup=get_main_menu(is_admin=user_id in ADMIN_TELEGRAM_IDS, cart_count=0)
+                )
+                admin_alert = (
+                    f"🚨 **YANGI KO'P TOVARLI BUYURTMA (GEOLOKATSIYA BILAN)!**\n\n"
+                    f"🆔 Buyurtma: #{new_id}\n"
+                    f"👤 Xaridor: {user_name} (ID: `{user_id}`)\n"
+                    f"📞 Telefon: {phone_to_use}\n"
+                    f"💰 Summa: {cart_summary['final_total']:,.0f} so'm\n"
+                    f"📍 Xarita: {maps_link}\n"
+                    f"📦 Tovarlar ({len(cart_summary['items'])} xil):\n" +
+                    "\n".join([f"  • {i['name']} ({i['quantity']}x) - {i['price']:,.0f} so'm" for i in cart_summary['items']])
+                )
+                for aid in ADMIN_TELEGRAM_IDS:
+                    try:
+                        await safe_send(aid, admin_alert, reply_markup=get_order_action_keyboard(new_id))
+                    except Exception:
+                        pass
+                return
 
     # Agar ham tovar, ham telefon raqami mavjud bo'lsa -> Buyurtmani darhol yakunlash
     if pending_prod and cust_phone:
@@ -380,41 +453,32 @@ async def handle_cancel_pending_order(message: types.Message):
     )
 
 
-# Mijozning o'z buyurtmalarini ko'rish
-@dp.message(F.text == "📦 Mening buyurtmalarim")
+# Mijozning o'z buyurtmalarini ko'rish (Real-time Tracker)
+@dp.message(F.text.in_(["📦 Mening buyurtmalarim", "📦 Buyurtmalarim"]))
 async def handle_customer_orders_list(message: types.Message):
     user_id = message.from_user.id
-    orders = DatabaseManager.get_customer_orders(user_id, limit=5)
-    if not orders:
-        await safe_send(
-            chat_id=message.chat.id,
-            text=(
-                "📦 **Sizda hali faol buyurtmalar mavjud emas.**\n\n"
-                "Do'konimizdagi eng sara mahsulotlarni ko'rish uchun **'🛍️ Katalog va Mahsulotlar'** tugmasini bosing yoki qidirayotgan kiyimingizni yozing!"
-            ),
-            reply_markup=get_main_menu(is_admin=user_id in ADMIN_TELEGRAM_IDS)
-        )
-        return
+    customer = DatabaseManager.get_customer(user_id)
+    user_name = customer.get("full_name", message.from_user.first_name) if customer else message.from_user.first_name
+    orders = OrderTracker.get_customer_orders(user_id, limit=5)
+    text = OrderTracker.format_orders_view(user_name, orders)
+    cart_count = CartManager.get_cart_item_count(user_id)
+    await safe_send(
+        chat_id=message.chat.id,
+        text=text,
+        reply_markup=get_main_menu(is_admin=user_id in ADMIN_TELEGRAM_IDS, cart_count=cart_count)
+    )
 
-    text_lines = ["📦 **Sizning buyurtmalaringiz:**\n"]
-    for o in orders:
-        status_label = "🆕 Qabul qilindi (Kuryer tayyorlanmoqda)" if o["status"] == "yangi" else (
-            "🚗 Yetkazilmoqda" if o["status"] == "yetkazilmoqda" else (
-                "✅ Yetkazildi" if o["status"] == "yakunlandi" else "❌ Bekor qilingan"
-            )
-        )
-        items_str = ", ".join([f"{it['product_name']} ({it['size']})" for it in o.get("items", [])])
-        text_lines.append(
-            f"🧾 **Buyurtma raqami: #{o['id']}**\n"
-            f"• Holat: **{status_label}**\n"
-            f"• Mahsulot: {items_str}\n"
-            f"• To'lov summasi: **{o['total_amount']:,.0f} so'm**\n"
-            f"• Manzil: {o['delivery_address']}\n"
-            f"• Vaqt: {o['created_at']}\n"
-            f"───────────────────────"
-        )
-    text_lines.append("Barcha buyurtmalaringiz bo'yicha savollaringiz bo'lsa, bemalol murojaat qilishingiz mumkin.")
-    await safe_send(message.chat.id, "\n".join(text_lines))
+# Aksiya va Promokodlar menyusi
+@dp.message(F.text.in_(["🏷️ Aksiya va Promokodlar", "🏷️ Aksiyalar", "🏷️ Promokodlar"]))
+async def handle_promos_menu(message: types.Message):
+    user_id = message.from_user.id
+    text = PromoManager.get_active_promos_display()
+    cart_count = CartManager.get_cart_item_count(user_id)
+    await safe_send(
+        chat_id=message.chat.id,
+        text=text,
+        reply_markup=get_main_menu(is_admin=user_id in ADMIN_TELEGRAM_IDS, cart_count=cart_count)
+    )
 
 # Sotuvchi bilan bog'lanish
 @dp.message(F.text == "📞 Sotuvchi bilan bog'lanish")
@@ -740,9 +804,28 @@ async def handle_add_product_prompt(message: types.Message):
     )
 
 # 6. Foydalanuvchi tugmalari
+def format_product_card(prod: Dict[str, Any], category: str, idx: int, total: int) -> str:
+    stock = prod.get("stock_quantity", 0)
+    stock_badge = "🟢 Omborda mavjud" if stock > 2 else (f"🔥 Shoshiling, oxirgi {stock} ta qoldi!" if stock > 0 else "🔴 Hozircha tugagan")
+    return (
+        f"🛍 **{prod['name']}**\n\n"
+        f"📁 Bo'lim: **{category}**\n"
+        f"📏 Mavjud o'lchamlar: `{prod['size']}`\n"
+        f"🎨 Rangi: `{prod['color']}`\n"
+        f"💰 Narxi: **{prod['sale_price']:,.0f} so'm**\n"
+        f"📊 Holati: {stock_badge}\n"
+        f"📌 Model: {idx + 1} / {total}\n\n"
+        f"Savatga qo'shish yoki hoziroq sotib olish uchun quyidagi tugmalarni bosing 👇"
+    )
+
+# 6. Foydalanuvchi tugmalari: Katalog va Interaktiv Karusel
 @dp.message(F.text == "🛍️ Katalog va Mahsulotlar")
 async def handle_catalog(message: types.Message):
-    await message.answer("Marhamat, quyidagi bo'limlardan birini tanlang:", reply_markup=get_category_keyboard())
+    await message.answer(
+        "🛍 **Do'konimiz bo'limlari:**\n\n"
+        "O'zingizga qiziq bo'limni tanlang va tovarlarni qulay tomosha qiling:",
+        reply_markup=get_category_keyboard()
+    )
 
 @dp.callback_query(F.data.startswith("cat_"))
 async def handle_category_select(callback: types.CallbackQuery):
@@ -754,20 +837,308 @@ async def handle_category_select(callback: types.CallbackQuery):
         await callback.answer()
         return
 
-    text = [f"✨ **{cat_name} bo'yicha eng yaxshi modellarimiz:**\n"]
-    for idx, p in enumerate(prods[:5], 1):
-        stock = p.get('stock_quantity', 0)
-        stock_label = f"🔥 Shoshiling, oxirgi {stock} ta qoldi!" if stock <= 2 and stock > 0 else f"{stock} dona qolgan"
-        text.append(
-            f"🔹 **{idx}. {p['name']}**\n"
-            f"   • O'lcham: {p['size']} | Rang: {p['color']}\n"
-            f"   • Narx: **{p['sale_price']:,.0f} so'm**\n"
-            f"   • Omborda: {stock_label}\n"
-        )
-    text.append("Qaysi biri sizga ma'qul bo'ldi? Tanlagan tovaringiz haqida yozishingiz mumkin.")
+    prod = prods[0]
+    total = len(prods)
+    text = format_product_card(prod, cat_name, 0, total)
+    kb = get_product_card_keyboard(prod["id"], cat_name, 0, total)
 
-    await safe_send(callback.message.chat.id, "\n".join(text))
+    try:
+        await callback.message.edit_text(text, reply_markup=kb)
+    except Exception:
+        await callback.message.answer(text, reply_markup=kb)
     await callback.answer()
+
+@dp.callback_query(F.data.startswith("p_nav_"))
+async def handle_product_nav(callback: types.CallbackQuery):
+    parts = callback.data.split("_")
+    cat_name = parts[2]
+    idx = int(parts[3])
+    prods = DatabaseManager.get_products(category=cat_name, in_stock_only=True)
+
+    if not prods or idx < 0 or idx >= len(prods):
+        await callback.answer("Boshqa tovar yo'q", show_alert=False)
+        return
+
+    prod = prods[idx]
+    total = len(prods)
+    text = format_product_card(prod, cat_name, idx, total)
+    kb = get_product_card_keyboard(prod["id"], cat_name, idx, total)
+
+    try:
+        await callback.message.edit_text(text, reply_markup=kb)
+    except Exception:
+        pass
+    await callback.answer()
+
+@dp.callback_query(F.data == "p_cats")
+async def handle_back_to_categories(callback: types.CallbackQuery):
+    try:
+        await callback.message.edit_text(
+            "🛍 **Do'konimiz bo'limlari:**\n\nO'zingizga qiziq bo'limni tanlang:",
+            reply_markup=get_category_keyboard()
+        )
+    except Exception:
+        await callback.message.answer(
+            "🛍 **Do'konimiz bo'limlari:**\n\nO'zingizga qiziq bo'limni tanlang:",
+            reply_markup=get_category_keyboard()
+        )
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("cart_add_"))
+async def handle_cart_add(callback: types.CallbackQuery):
+    p_id = int(callback.data.replace("cart_add_", ""))
+    user_id = callback.from_user.id
+    res = CartManager.add_item(user_id, p_id, quantity=1)
+
+    if res["success"]:
+        count = CartManager.get_cart_item_count(user_id)
+        prod = DatabaseManager.get_product_by_id(p_id)
+        p_name = prod["name"] if prod else "Mahsulot"
+        rec = RecommendationEngine.get_cross_sell_for_product(p_name, exclude_ids=[p_id])
+        rec_hint = f"\n💡 Tavsiya: '{rec['name']}' ham juda yarashadi!" if rec else ""
+        await callback.answer(f"✅ Savatga qo'shildi! (Jami: {count} ta){rec_hint}", show_alert=False)
+    else:
+        await callback.answer(f"⚠️ {res['message']}", show_alert=True)
+
+@dp.callback_query(F.data.startswith("fast_buy_"))
+async def handle_fast_buy(callback: types.CallbackQuery):
+    p_id = int(callback.data.replace("fast_buy_", ""))
+    user_id = callback.from_user.id
+    prod = DatabaseManager.get_product_by_id(p_id)
+    if not prod:
+        await callback.answer("Mahsulot topilmadi!", show_alert=True)
+        return
+
+    set_pending_order(user_id, prod)
+    customer = DatabaseManager.get_customer(user_id)
+
+    if customer and customer.get("phone") and customer.get("address"):
+        text = (
+            f"⚡️ **Tezkor xarid tasdiqlash:**\n\n"
+            f"🛍 Mahsulot: **{prod['name']}**\n"
+            f"💰 Narxi: **{prod['sale_price']:,.0f} so'm**\n"
+            f"📍 Manzilingiz: **{customer['address']}**\n"
+            f"📱 Telefon: `{customer['phone']}`\n\n"
+            f"Buyurtmani tasdiqlash uchun 'Ha, olaman' deb yozing!"
+        )
+    else:
+        text = (
+            f"⚡️ **Tezkor xarid:** **{prod['name']}** ({prod['sale_price']:,.0f} so'm)\n\n"
+            f"Buyurtmani rasmiylashtirish uchun telefon raqamingiz va manzilingizni yozib yuboring (yoki pastdagi tugmani bosing):"
+        )
+    await callback.message.answer(text, reply_markup=get_phone_request_keyboard())
+    await callback.answer()
+
+# Savatcha interfeysi
+@dp.callback_query(F.data == "open_cart")
+@dp.message(F.text.startswith("🛒 Savatcham"))
+async def handle_open_cart(event: types.CallbackQuery | types.Message):
+    user_id = event.from_user.id
+    summary = CartManager.get_cart_summary(user_id)
+    text = CartManager.format_cart_message(user_id)
+    kb = get_cart_keyboard(summary["items"], has_promo=bool(summary["promo_code"]))
+
+    if isinstance(event, types.CallbackQuery):
+        try:
+            await event.message.edit_text(text, reply_markup=kb)
+        except Exception:
+            await event.message.answer(text, reply_markup=kb)
+        await event.answer()
+    else:
+        await safe_send(event.chat.id, text, reply_markup=kb)
+
+@dp.callback_query(F.data.startswith("cart_inc_"))
+async def handle_cart_inc(callback: types.CallbackQuery):
+    p_id = int(callback.data.replace("cart_inc_", ""))
+    user_id = callback.from_user.id
+    CartManager.update_quantity(user_id, p_id, delta=1)
+    summary = CartManager.get_cart_summary(user_id)
+    text = CartManager.format_cart_message(user_id)
+    kb = get_cart_keyboard(summary["items"], has_promo=bool(summary["promo_code"]))
+    try:
+        await callback.message.edit_text(text, reply_markup=kb)
+    except Exception:
+        pass
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("cart_dec_"))
+async def handle_cart_dec(callback: types.CallbackQuery):
+    p_id = int(callback.data.replace("cart_dec_", ""))
+    user_id = callback.from_user.id
+    CartManager.update_quantity(user_id, p_id, delta=-1)
+    summary = CartManager.get_cart_summary(user_id)
+    text = CartManager.format_cart_message(user_id)
+    kb = get_cart_keyboard(summary["items"], has_promo=bool(summary["promo_code"]))
+    try:
+        await callback.message.edit_text(text, reply_markup=kb)
+    except Exception:
+        pass
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("cart_del_"))
+async def handle_cart_del(callback: types.CallbackQuery):
+    p_id = int(callback.data.replace("cart_del_", ""))
+    user_id = callback.from_user.id
+    CartManager.remove_item(user_id, p_id)
+    summary = CartManager.get_cart_summary(user_id)
+    text = CartManager.format_cart_message(user_id)
+    kb = get_cart_keyboard(summary["items"], has_promo=bool(summary["promo_code"]))
+    try:
+        await callback.message.edit_text(text, reply_markup=kb)
+    except Exception:
+        pass
+    await callback.answer("Mahsulot savatdan olib tashlandi")
+
+@dp.callback_query(F.data == "cart_clear")
+async def handle_cart_clear(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    CartManager.clear_cart(user_id)
+    text = CartManager.format_cart_message(user_id)
+    kb = get_cart_keyboard([], has_promo=False)
+    try:
+        await callback.message.edit_text(text, reply_markup=kb)
+    except Exception:
+        pass
+    await callback.answer("Savat tozalandi")
+
+@dp.callback_query(F.data == "cart_promo_add")
+async def handle_cart_promo_add(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    PROMO_WAITING_USERS.add(user_id)
+    await callback.message.answer(
+        "🏷 **Promokodingizni kiriting:**\n\n"
+        "Masalan: `MARKAZ10`, `SUPER2026` yoki `VIPMIJOZ` deb yozib yuboring:"
+    )
+    await callback.answer()
+
+@dp.callback_query(F.data == "cart_promo_del")
+async def handle_cart_promo_del(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    CartManager.remove_promo(user_id)
+    summary = CartManager.get_cart_summary(user_id)
+    text = CartManager.format_cart_message(user_id)
+    kb = get_cart_keyboard(summary["items"], has_promo=False)
+    try:
+        await callback.message.edit_text(text, reply_markup=kb)
+    except Exception:
+        pass
+    await callback.answer("Promokod bekor qilindi")
+
+@dp.callback_query(F.data == "cart_checkout")
+async def handle_cart_checkout(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    summary = CartManager.get_cart_summary(user_id)
+    if not summary["items"]:
+        await callback.answer("Savatchangiz bo'sh!", show_alert=True)
+        return
+
+    customer = DatabaseManager.get_customer(user_id)
+    cust_phone = customer.get("phone") if customer else None
+    cust_address = customer.get("address") if customer else None
+
+    if cust_phone and cust_address:
+        order_items = [{"product_id": i["product_id"], "quantity": i["quantity"]} for i in summary["items"]]
+        order_res = DatabaseManager.create_order(
+            customer_telegram_id=user_id,
+            customer_name=customer.get("full_name", callback.from_user.first_name),
+            customer_phone=cust_phone,
+            delivery_address=cust_address,
+            items=order_items,
+            payment_method="cash_on_delivery",
+            notes=f"Savatchadan (Promo: {summary['promo_code'] or 'yoq'})"
+        )
+        if order_res.get("success"):
+            new_id = order_res["order_id"]
+            CartManager.clear_cart(user_id)
+            if summary["promo_code"]:
+                PromoManager.register_usage(summary["promo_code"])
+
+            delivery_label = "Bepul! (Sovg'a)" if summary["free_delivery"] else "Oddiy tarif"
+            confirm_text = (
+                f"🎉 **BUYURTMANGIZ QABUL QILINDI!**\n\n"
+                f"🧾 Buyurtma raqami: **#{new_id}**\n"
+                f"👤 Qabul qiluvchi: **{customer.get('full_name')}**\n"
+                f"📱 Telefon: `{cust_phone}`\n"
+                f"📍 Manzil: **{cust_address}**\n"
+                f"💰 Jami to'lov: **{summary['final_total']:,.0f} so'm**\n"
+                f"🚚 Yetkazib berish: {delivery_label}\n\n"
+                f"Kuryerimiz tez orada siz bilan bog'lanadi! Xaridingiz barakali bo'lsin! 😊"
+            )
+            await callback.message.answer(confirm_text, reply_markup=get_main_menu(is_admin=user_id in ADMIN_TELEGRAM_IDS, cart_count=0))
+
+            admin_alert = (
+                f"🔔 **YANGI KO'P TOVARLI BUYURTMA #{new_id}!**\n\n"
+                f"👤 Mijoz: {customer.get('full_name')} (ID: `{user_id}`)\n"
+                f"📱 Tel: {cust_phone}\n"
+                f"📍 Manzil: {cust_address}\n"
+                f"💰 Summa: **{summary['final_total']:,.0f} so'm**\n"
+                f"📦 Tovarlar ({len(summary['items'])} xil):\n" +
+                "\n".join([f"  • {i['name']} ({i['quantity']}x) - {i['price']:,.0f} so'm" for i in summary['items']])
+            )
+            for aid in ADMIN_TELEGRAM_IDS:
+                await safe_send(aid, admin_alert, reply_markup=get_order_action_keyboard(new_id))
+            if CHANNEL_ID:
+                try:
+                    await safe_send(CHANNEL_ID, admin_alert)
+                except Exception:
+                    pass
+            await callback.answer()
+            return
+
+    # Agar telefon yoki manzil yetishmasa
+    CHECKOUT_WAITING_USERS[user_id] = {"stage": "phone"}
+    await callback.message.answer(
+        "📱 Buyurtmani rasmiylashtirish uchun, iltimos, **telefon raqamingizni** yuboring (yoki pastdagi tugmani bosing):",
+        reply_markup=get_phone_request_keyboard()
+    )
+    await callback.answer()
+
+# Admin Buyurtma Holatini O'zgartirish va Push Xabar
+@dp.callback_query(F.data.startswith("ord_prep_"))
+async def handle_order_prep(callback: types.CallbackQuery):
+    ord_id = int(callback.data.replace("ord_prep_", ""))
+    DatabaseManager.update_order_status(ord_id, "tayyorlanmoqda")
+    order = DatabaseManager.get_order(ord_id)
+    if order and order.get("customer_telegram_id"):
+        push = OrderTracker.format_status_notification(ord_id, "tayyorlanmoqda", order.get("customer_name", "Mijoz"))
+        await safe_send(order["customer_telegram_id"], push)
+    await callback.answer("Buyurtma 'Qadoqlanmoqda' holatiga o'tkazildi!", show_alert=True)
+    try:
+        await callback.message.edit_reply_markup(reply_markup=get_order_action_keyboard(ord_id))
+    except Exception:
+        pass
+
+@dp.callback_query(F.data.startswith("ord_ship_"))
+async def handle_order_ship(callback: types.CallbackQuery):
+    ord_id = int(callback.data.replace("ord_ship_", ""))
+    DatabaseManager.update_order_status(ord_id, "yetkazilmoqda")
+    order = DatabaseManager.get_order(ord_id)
+    if order and order.get("customer_telegram_id"):
+        push = OrderTracker.format_status_notification(ord_id, "yetkazilmoqda", order.get("customer_name", "Mijoz"))
+        await safe_send(order["customer_telegram_id"], push)
+    await callback.answer("Buyurtma 'Kuryerga berildi (Yo'lda)' holatiga o'tkazildi!", show_alert=True)
+    try:
+        await callback.message.edit_reply_markup(reply_markup=get_order_action_keyboard(ord_id))
+    except Exception:
+        pass
+
+# 5 Yulduzli Baholash (Review) Callback
+@dp.callback_query(F.data.startswith("rev_"))
+async def handle_customer_review(callback: types.CallbackQuery):
+    parts = callback.data.split("_")
+    ord_id = int(parts[1])
+    rating = int(parts[2])
+    user_id = callback.from_user.id
+    user_name = clean_display_name(callback.from_user.first_name)
+    ReviewManager.add_review(user_id, user_name, rating, order_id=ord_id)
+    stars = "⭐️" * rating
+    await callback.message.edit_text(
+        f"Katta rahmat! Siz do'konimizni **{stars} ({rating}/5)** deb baholadingiz. "
+        f"Sizga xizmat ko'rsatishdan mamnunmiz! Har doim do'konimizda kutib qolamiz! 😊"
+    )
+    for aid in ADMIN_TELEGRAM_IDS:
+        await safe_send(aid, f"⭐️ **Yangi mijoz bahosi:** {user_name} #{ord_id} buyurtmani {stars} ({rating}/5) deb baholadi!")
+    await callback.answer("Bahoyingiz qabul qilindi!")
 
 @dp.message(F.text.in_(["🚚 Yetkazib berish", "🚚 Ingichka bo'ylab yetkazish"]))
 async def handle_delivery_info(message: types.Message):
@@ -1172,6 +1543,100 @@ async def handle_private_chat(message: types.Message):
     preferred_name = customer.get("preferred_name") if customer else None
     user_name = clean_display_name(message.from_user.first_name, preferred_name)
 
+    # 0. Promokod kutish holati tekshiruvi
+    if user_id in PROMO_WAITING_USERS:
+        PROMO_WAITING_USERS.remove(user_id)
+        res = PromoManager.validate_code(text)
+        if res["valid"]:
+            CartManager.apply_promo(user_id, res["code"], discount_percent=res["percent"], discount_amount=res["amount"])
+            summary = CartManager.get_cart_summary(user_id)
+            kb = get_cart_keyboard(summary["items"], has_promo=True)
+            await message.answer(f"{res['message']}\n\n" + CartManager.format_cart_message(user_id), reply_markup=kb)
+            return
+        else:
+            await message.answer(res["message"])
+            return
+
+    # 0a. Checkout (savatdan ko'p tovarli buyurtma) kutish holati
+    if user_id in CHECKOUT_WAITING_USERS:
+        state = CHECKOUT_WAITING_USERS[user_id]
+        if state.get("stage") == "phone":
+            phone_match = re.search(r"(\+?998\s?\d{2}\s?\d{3}\s?\d{2}\s?\d{2}|\b\d{9}\b)", text)
+            if phone_match or len(text.strip()) >= 7:
+                clean_phone = phone_match.group(1).replace(" ", "") if phone_match else text.strip()
+                if not clean_phone.startswith("+"):
+                    clean_phone = "+998" + clean_phone if len(clean_phone) == 9 else "+" + clean_phone
+                state["phone"] = clean_phone
+                state["stage"] = "address"
+                DatabaseManager.upsert_customer(telegram_id=user_id, full_name=user_name, phone=clean_phone)
+                await message.answer(
+                    f"📱 Telefon qabul qilindi: `{clean_phone}` ✅\n\n"
+                    f"Endi buyurtmangizni yetkazib berish **manzilini** (shahar, tuman, mahalla, uy) yozib yuboring (yoki pastdagi geolokatsiya tugmasini bosing):",
+                    reply_markup=get_location_request_keyboard()
+                )
+                return
+        elif state.get("stage") == "address":
+            address = text.strip()
+            phone = state.get("phone") or (customer.get("phone") if customer else "")
+            DatabaseManager.upsert_customer(telegram_id=user_id, full_name=user_name, address=address)
+            CHECKOUT_WAITING_USERS.pop(user_id, None)
+
+            summary = CartManager.get_cart_summary(user_id)
+            if summary["items"]:
+                order_items = [{"product_id": i["product_id"], "quantity": i["quantity"]} for i in summary["items"]]
+                order_res = DatabaseManager.create_order(
+                    customer_telegram_id=user_id,
+                    customer_name=user_name,
+                    customer_phone=phone,
+                    delivery_address=address,
+                    items=order_items,
+                    payment_method="cash_on_delivery",
+                    notes=f"Savatchadan (Promo: {summary['promo_code'] or 'yoq'})"
+                )
+                if order_res.get("success"):
+                    new_id = order_res["order_id"]
+                    CartManager.clear_cart(user_id)
+                    if summary["promo_code"]:
+                        PromoManager.register_usage(summary["promo_code"])
+
+                    delivery_label = "Bepul! (Sovg'a)" if summary["free_delivery"] else "Oddiy tarif"
+                    confirm_text = (
+                        f"🎉 **BUYURTMANGIZ QABUL QILINDI!**\n\n"
+                        f"🧾 Buyurtma raqami: **#{new_id}**\n"
+                        f"👤 Qabul qiluvchi: **{user_name}**\n"
+                        f"📱 Telefon: `{phone}`\n"
+                        f"📍 Manzil: **{address}**\n"
+                        f"💰 Jami to'lov: **{summary['final_total']:,.0f} so'm**\n"
+                        f"🚚 Yetkazib berish: {delivery_label}\n\n"
+                        f"Kuryerimiz tez orada siz bilan bog'lanadi! Xaridingiz barakali bo'lsin! 😊"
+                    )
+                    await message.answer(confirm_text, reply_markup=get_main_menu(is_admin=user_id in ADMIN_TELEGRAM_IDS, cart_count=0))
+
+                    admin_alert = (
+                        f"🔔 **YANGI KO'P TOVARLI BUYURTMA #{new_id}!**\n\n"
+                        f"👤 Mijoz: {user_name} (ID: `{user_id}`)\n"
+                        f"📱 Tel: {phone}\n"
+                        f"📍 Manzil: {address}\n"
+                        f"💰 Summa: **{summary['final_total']:,.0f} so'm**\n"
+                        f"📦 Tovarlar ({len(summary['items'])} xil):\n" +
+                        "\n".join([f"  • {i['name']} ({i['quantity']}x) - {i['price']:,.0f} so'm" for i in summary['items']])
+                    )
+                    for aid in ADMIN_TELEGRAM_IDS:
+                        await safe_send(aid, admin_alert, reply_markup=get_order_action_keyboard(new_id))
+                    return
+
+    # 0b. Savat va Promokod tabiiy so'rovlari
+    if text_lower in ["savat", "savatcha", "karzinka", "savatim"]:
+        summary = CartManager.get_cart_summary(user_id)
+        text_cart = CartManager.format_cart_message(user_id)
+        kb = get_cart_keyboard(summary["items"], has_promo=bool(summary["promo_code"]))
+        await message.answer(text_cart, reply_markup=kb)
+        return
+
+    if any(w in text_lower for w in ["promokod", "promokodlar", "chegirma kodi", "aksiyalar"]):
+        await message.answer(PromoManager.get_active_promos_display())
+        return
+
     # Admin yangi tovar matnini yuborgan bo'lsa
     if user_id in ADMIN_TELEGRAM_IDS and ("keldi" in text_lower or "tan narxi" in text_lower or "sotuv" in text_lower):
         parsed = agent.parse_product_voice_text(text)
@@ -1368,7 +1833,7 @@ import subprocess
 import collections
 from datetime import datetime
 
-CURRENT_VERSION = "v4.5-flawless-zero-offline"
+CURRENT_VERSION = "v5.0-global-retail-flagship"
 PING_HISTORY = collections.deque(maxlen=30)
 
 def get_current_commit() -> str:
