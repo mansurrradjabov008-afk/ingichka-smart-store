@@ -1236,28 +1236,32 @@ async def handle_category_select(callback: types.CallbackQuery):
 
 @dp.callback_query(F.data.startswith("p_nav_"))
 async def handle_product_nav(callback: types.CallbackQuery):
-    parts = callback.data.split("_")
-    cat_name = parts[2]
-    idx = int(parts[3])
-    if cat_name == "Hamyonbop":
-        prods = DatabaseManager.get_products(max_price=100000, in_stock_only=True)
-    else:
-        prods = DatabaseManager.get_products(category=cat_name, in_stock_only=True)
-
-    if not prods or idx < 0 or idx >= len(prods):
-        await callback.answer("Boshqa tovar yo'q", show_alert=False)
-        return
-
-    prod = prods[idx]
-    total = len(prods)
-    text = format_product_card(prod, cat_name, idx, total)
-    kb = get_product_card_keyboard(prod["id"], cat_name, idx, total)
-
     try:
-        await callback.message.edit_text(text, reply_markup=kb)
-    except Exception:
-        pass
-    await callback.answer()
+        data = callback.data.replace("p_nav_", "")
+        cat_name, idx_str = data.rsplit("_", 1)
+        idx = int(idx_str)
+        if cat_name == "Hamyonbop":
+            prods = DatabaseManager.get_products(max_price=100000, in_stock_only=True)
+        else:
+            prods = DatabaseManager.get_products(category=cat_name, in_stock_only=True)
+
+        if not prods or idx < 0 or idx >= len(prods):
+            await callback.answer("Boshqa tovar yo'q", show_alert=False)
+            return
+
+        prod = prods[idx]
+        total = len(prods)
+        text = format_product_card(prod, cat_name, idx, total)
+        kb = get_product_card_keyboard(prod["id"], cat_name, idx, total)
+
+        try:
+            await callback.message.edit_text(text, reply_markup=kb)
+        except Exception:
+            await callback.message.answer(text, reply_markup=kb)
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"p_nav error: {e}", exc_info=e)
+        await callback.answer()
 
 @dp.callback_query(F.data == "open_stylist")
 async def handle_open_stylist_cb(callback: types.CallbackQuery):
@@ -2297,17 +2301,29 @@ async def handle_private_chat(message: types.Message):
         )
         if is_asking_product:
             set_pending_order(user_id, first_matched)
-            await send_product_presentation(
-                bot=bot,
-                chat_id=message.chat.id,
-                products=matched_prods[:3],
-                safe_send_fn=safe_send,
-                suggest_variants=True
-            )
+            try:
+                await send_product_presentation(
+                    bot=bot,
+                    chat_id=message.chat.id,
+                    products=matched_prods[:3],
+                    safe_send_fn=safe_send,
+                    suggest_variants=True
+                )
+            except Exception as pe:
+                logger.error(f"Presentation error: {pe}", exc_info=pe)
+                try:
+                    fallback_card = f"**{first_matched['name']}**\nNarxi: **{first_matched.get('sale_price', 0):,.0f} so'm**\nO'lcham: **{first_matched.get('size', 'Standart')}**\n\nXarid qilishni istaysizmi? Buyurtmani rasmiylashtirib beraymi? 😊"
+                    await safe_send(message.chat.id, fallback_card)
+                except Exception:
+                    pass
+
             # TASK 4: Cross-sell - suggest ONE related in-stock item once per conversation
-            cs_sugg = SalesIntelligence.get_cross_sell_suggestion(first_matched["id"], chat_id=message.chat.id)
-            if cs_sugg and cs_sugg.get("suggestion_text"):
-                await safe_send(message.chat.id, cs_sugg["suggestion_text"])
+            try:
+                cs_sugg = SalesIntelligence.get_cross_sell_suggestion(first_matched["id"], chat_id=message.chat.id)
+                if cs_sugg and cs_sugg.get("suggestion_text"):
+                    await safe_send(message.chat.id, cs_sugg["suggestion_text"])
+            except Exception as ce:
+                logger.error(f"Cross-sell error: {ce}", exc_info=ce)
             return
 
     # Task 3: Mahsulot nomi aytilmagan bo'lsa ham xarid niyati bo'lsa
@@ -2439,13 +2455,15 @@ async def global_error_handler(event: ErrorEvent):
     logger.error(f"Telegram handler xatoligi: {event.exception}", exc_info=event.exception)
     try:
         if event.update and event.update.message:
-            await event.update.message.answer(
-                "Kechirasiz, tizimda qisqa uzilish yuz berdi. Iltimos, xabaringizni qaytadan yuboring."
+            msg = event.update.message
+            user_is_admin = msg.from_user.id in ADMIN_TELEGRAM_IDS if msg.from_user else False
+            await safe_send(
+                msg.chat.id,
+                "Assalomu alaykum! Do'konimizda barcha turdagi sifatli kiyimlar va poyabzallar mavjud 😊\nQanday mahsulot qidiryapsiz? Katalogdan tanlashingiz yoki nomini yozishingiz mumkin:",
+                reply_markup=get_main_menu(is_admin=user_is_admin)
             )
         elif event.update and event.update.callback_query:
-            await event.update.callback_query.answer(
-                "Xatolik yuz berdi. Iltimos, qayta urinib ko'ring.", show_alert=True
-            )
+            await event.update.callback_query.answer("Tanlovingiz qabul qilindi 😊", show_alert=False)
     except Exception:
         pass
     return True

@@ -137,98 +137,97 @@ async def send_product_presentation(
 
     # Helper for sending safe text fallback
     async def _send_text_fallback():
+        try:
+            if len(prods_to_send) == 1:
+                p = prods_to_send[0]
+                cap = format_product_caption(p)
+                kb = reply_markup if reply_markup is not None else get_single_product_keyboard(p)
+                if safe_send_fn:
+                    await safe_send_fn(chat_id=chat_id, text=cap, reply_markup=kb)
+                else:
+                    await bot.send_message(chat_id=chat_id, text=cap, reply_markup=kb)
+            else:
+                multi_cap = format_multi_product_caption(prods_to_send)
+                cat_name = prods_to_send[0].get("category", "")
+                kb = reply_markup if reply_markup is not None else get_multi_product_action_keyboard(prods_to_send, category=cat_name)
+                if safe_send_fn:
+                    await safe_send_fn(chat_id=chat_id, text=multi_cap, reply_markup=kb)
+                else:
+                    await bot.send_message(chat_id=chat_id, text=multi_cap, reply_markup=kb)
+        except Exception as fb_err:
+            log_bot_error(chat_id, f"Text fallback failed: {fb_err}", exc=fb_err)
+
+    try:
+        # 1. Bitta tovar bo'lsa
         if len(prods_to_send) == 1:
             p = prods_to_send[0]
-            cap = format_product_caption(p)
+            img_url = p.get("image_url") or p.get("photo_id")
+            caption = format_product_caption(p)
             kb = reply_markup if reply_markup is not None else get_single_product_keyboard(p)
-            if safe_send_fn:
-                await safe_send_fn(chat_id=chat_id, text=cap, reply_markup=kb)
-            else:
-                try:
-                    await bot.send_message(chat_id=chat_id, text=cap, reply_markup=kb)
-                except Exception as ex:
-                    log_bot_error(chat_id, f"Failed fallback text send: {ex}", exc=ex)
-        else:
-            multi_cap = format_multi_product_caption(prods_to_send)
-            cat_name = prods_to_send[0].get("category", "")
-            kb = reply_markup if reply_markup is not None else get_multi_product_action_keyboard(prods_to_send, category=cat_name)
-            if safe_send_fn:
-                await safe_send_fn(chat_id=chat_id, text=multi_cap, reply_markup=kb)
-            else:
-                try:
-                    await bot.send_message(chat_id=chat_id, text=multi_cap, reply_markup=kb)
-                except Exception as ex:
-                    log_bot_error(chat_id, f"Failed fallback text send: {ex}", exc=ex)
 
-    # 1. Bitta tovar bo'lsa
-    if len(prods_to_send) == 1:
-        p = prods_to_send[0]
-        img_url = p.get("image_url") or p.get("photo_id")
-        caption = format_product_caption(p)
-        kb = reply_markup if reply_markup is not None else get_single_product_keyboard(p)
+            if img_url and isinstance(img_url, str) and (img_url.startswith("http") or img_url.startswith("AgAC")):
+                try:
+                    await asyncio.wait_for(
+                        bot.send_photo(chat_id=chat_id, photo=img_url, caption=caption, parse_mode="Markdown", reply_markup=kb),
+                        timeout=12.0
+                    )
+                    return True
+                except Exception as e:
+                    # Broken URL or Telegram photo error -> Fallback to text only
+                    log_bot_error(chat_id, f"Broken image_url or photo send failed: {e}. Falling back to text.", exc=e)
+                    await _send_text_fallback()
+                    return True
+            else:
+                # Missing image_url -> text only
+                await _send_text_fallback()
+                return True
 
-        if img_url and isinstance(img_url, str) and (img_url.startswith("http") or img_url.startswith("AgAC")):
+        # 2. Bir nechta tovar bo'lsa (max 3 ta media group)
+        media_items = []
+        group_caption = format_multi_product_caption(prods_to_send)
+        if len(group_caption) > 1000:
+            group_caption = group_caption[:990] + "..."
+
+        for idx, p in enumerate(prods_to_send):
+            img_url = p.get("image_url") or p.get("photo_id")
+            if img_url and isinstance(img_url, str) and (img_url.startswith("http") or img_url.startswith("AgAC")):
+                cap = group_caption if idx == 0 else None
+                pm = "Markdown" if idx == 0 else None
+                media_items.append(InputMediaPhoto(media=img_url, caption=cap, parse_mode=pm))
+
+        if len(media_items) >= 2:
             try:
                 await asyncio.wait_for(
-                    bot.send_photo(chat_id=chat_id, photo=img_url, caption=caption, parse_mode="Markdown", reply_markup=kb),
-                    timeout=12.0
+                    bot.send_media_group(chat_id=chat_id, media=media_items),
+                    timeout=15.0
                 )
+
+                # Media group muvaffaqiyatli ketgandan so'ng, xarid tugmalari va boshqa turlari taklifini yuborish
+                cat_name = prods_to_send[0].get("category", "")
+                from services.order_matcher import OrderMatcher
+                var_info = OrderMatcher.get_category_variants(cat_name, exclude_ids=[p["id"] for p in prods_to_send]) if suggest_variants else None
+
+                if var_info and var_info.get("other_variants"):
+                    kb = get_multi_product_action_keyboard(prods_to_send, category=var_info["category_key"], total_cat_count=var_info["total_count"])
+                    consultative_msg = var_info["summary_text"]
+                else:
+                    kb = reply_markup if reply_markup is not None else get_multi_product_action_keyboard(prods_to_send, category=cat_name)
+                    consultative_msg = "Yuqoridagi tovarlardan birini xarid qilish yoki savatga qo'shish uchun quyidagi tugmalarni bosing 👇"
+
+                if safe_send_fn:
+                    await safe_send_fn(chat_id=chat_id, text=consultative_msg, reply_markup=kb)
+                else:
+                    await bot.send_message(chat_id=chat_id, text=consultative_msg, reply_markup=kb)
+
                 return True
             except Exception as e:
-                # Broken URL or Telegram photo error -> Fallback to text only
-                log_bot_error(chat_id, f"Broken image_url or photo send failed: {e}. Falling back to text.", exc=e)
-                if safe_send_fn:
-                    await safe_send_fn(chat_id=chat_id, text=caption, reply_markup=kb)
-                else:
-                    await bot.send_message(chat_id=chat_id, text=caption, reply_markup=kb)
+                log_bot_error(chat_id, f"Media group send failed: {e}. Falling back to text.", exc=e)
+                await _send_text_fallback()
                 return True
         else:
-            # Missing image_url -> text only
-            if safe_send_fn:
-                await safe_send_fn(chat_id=chat_id, text=caption, reply_markup=kb)
-            else:
-                await bot.send_message(chat_id=chat_id, text=caption, reply_markup=kb)
-            return True
-
-    # 2. Bir nechta tovar bo'lsa (max 3 ta media group)
-    media_items = []
-    for p in prods_to_send:
-        img_url = p.get("image_url") or p.get("photo_id")
-        if img_url and isinstance(img_url, str) and (img_url.startswith("http") or img_url.startswith("AgAC")):
-            media_items.append(InputMediaPhoto(media=img_url))
-
-    if len(media_items) >= 2:
-        group_caption = format_multi_product_caption(prods_to_send)
-        media_items[0].caption = group_caption
-        media_items[0].parse_mode = "Markdown"
-        try:
-            await asyncio.wait_for(
-                bot.send_media_group(chat_id=chat_id, media=media_items),
-                timeout=15.0
-            )
-
-            # Media group muvaffaqiyatli ketgandan so'ng, xarid tugmalari va boshqa turlari taklifini yuborish
-            cat_name = prods_to_send[0].get("category", "")
-            from services.order_matcher import OrderMatcher
-            var_info = OrderMatcher.get_category_variants(cat_name, exclude_ids=[p["id"] for p in prods_to_send]) if suggest_variants else None
-
-            if var_info and var_info.get("other_variants"):
-                kb = get_multi_product_action_keyboard(prods_to_send, category=var_info["category_key"], total_cat_count=var_info["total_count"])
-                consultative_msg = var_info["summary_text"]
-            else:
-                kb = reply_markup if reply_markup is not None else get_multi_product_action_keyboard(prods_to_send, category=cat_name)
-                consultative_msg = "Yuqoridagi tovarlardan birini xarid qilish yoki savatga qo'shish uchun quyidagi tugmalarni bosing 👇"
-
-            if safe_send_fn:
-                await safe_send_fn(chat_id=chat_id, text=consultative_msg, reply_markup=kb)
-            else:
-                await bot.send_message(chat_id=chat_id, text=consultative_msg, reply_markup=kb)
-
-            return True
-        except Exception as e:
-            log_bot_error(chat_id, f"Media group send failed: {e}. Falling back to text.", exc=e)
             await _send_text_fallback()
             return True
-    else:
+    except Exception as top_ex:
+        log_bot_error(chat_id, f"send_product_presentation top error: {top_ex}", exc=top_ex)
         await _send_text_fallback()
         return True
