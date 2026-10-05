@@ -905,12 +905,12 @@ def build_inventory():
         cursor.execute("""
             INSERT INTO products (
                 id, name, category, size, color, cost_price, sale_price, stock_quantity,
-                description, is_active, sku, brand, gender, material, min_stock, supplier
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
+                description, is_active, sku, brand, gender, material, min_stock, supplier, image_url
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
         """, (
             p["id"], p["name"], p["category"], sizes_str, colors_str,
             p["cost_price"], p["sale_price"], p["stock"],
-            desc, p["sku"], p["brand"], p["gender"], p["material"], p["min_stock"], p["supplier"]
+            desc, p["sku"], p["brand"], p["gender"], p["material"], p["min_stock"], p["supplier"], p["image_url"]
         ))
     conn.commit()
     conn.close()

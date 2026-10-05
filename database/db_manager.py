@@ -132,8 +132,8 @@ def init_db():
                     cursor.execute("""
                         INSERT INTO products (
                             id, name, category, size, color, cost_price, sale_price, stock_quantity,
-                            description, is_active, sku, brand, gender, material, min_stock, supplier
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
+                            description, is_active, sku, brand, gender, material, min_stock, supplier, image_url
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         p["id"],
                         p["name"],
@@ -149,7 +149,8 @@ def init_db():
                         p.get("gender", ""),
                         p.get("material", ""),
                         int(p.get("min_stock", 0)),
-                        p.get("supplier", "")
+                        p.get("supplier", ""),
+                        p.get("image_url", "")
                     ))
             except Exception:
                 pass
@@ -185,14 +186,30 @@ class DatabaseManager:
             if cat_clean.lower() in ["bolalar", "bolalar kiyimi"]:
                 query += " AND (category LIKE '%Bolalar%' OR gender = 'Bolalar' OR category = 'Pijama')"
             elif cat_clean.lower() in ["ayol", "ayollar", "ayollar kiyimi"]:
-                query += " AND (gender = 'Ayol' OR category IN ('Ko\'ylak', 'Kardigan'))"
+                query += " AND (gender = 'Ayol' OR category IN ('Ko''ylak', 'Kardigan'))"
             elif cat_clean.lower() in ["erkak", "erkaklar", "erkaklar kiyimi"]:
                 query += " AND (gender = 'Erkak')"
             elif cat_clean.lower() in ["uy tekstili", "tekstil"]:
                 query += " AND (category = 'Uy tekstili' OR category = 'Pijama')"
+            elif cat_clean.lower() in ["sviter", "svitir", "kofta", "xudi", "hoodie"]:
+                query += " AND (category = 'Svitir' OR name LIKE '%svitir%' OR name LIKE '%sviter%' OR name LIKE '%kofta%')"
+            elif cat_clean.lower() in ["kurtka", "vitrofka", "vetrovka"]:
+                query += " AND (category = 'Kurtka' OR name LIKE '%vitrofka%' OR name LIKE '%kurtka%')"
+            elif cat_clean.lower() in ["oyoq kiyim", "poyabzal", "tapichka", "shippak", "krossovka"]:
+                query += " AND (category = 'Oyoq kiyim' OR name LIKE '%tapichka%' OR name LIKE '%shippak%' OR name LIKE '%krossovka%')"
+            elif cat_clean.lower() in ["ko'ylak", "koylak", "koʻylak", "tonika"]:
+                query += " AND (category = 'Ko''ylak' OR name LIKE '%ko''ylak%' OR name LIKE '%tonika%')"
+            elif cat_clean.lower() in ["shim", "jinsi", "triko"]:
+                query += " AND (category = 'Shim' OR name LIKE '%shim%' OR name LIKE '%jinsi%' OR name LIKE '%triko%')"
+            elif cat_clean.lower() in ["kostyum", "sportivka", "troyka"]:
+                query += " AND (category = 'Kostyum' OR name LIKE '%sportivka%' OR name LIKE '%kostyum%')"
+            elif cat_clean.lower() in ["kardigan"]:
+                query += " AND (category = 'Kardigan' OR name LIKE '%kardigan%')"
+            elif cat_clean.lower() in ["pijama"]:
+                query += " AND (category = 'Pijama' OR name LIKE '%pijama%')"
             else:
-                query += " AND category = ?"
-                params.append(category)
+                query += " AND (category = ? OR category LIKE ?)"
+                params.extend([category, f"%{category}%"])
         if search_query:
             query += " AND (name LIKE ? OR description LIKE ? OR color LIKE ?)"
             term = f"%{search_query}%"

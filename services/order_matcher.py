@@ -126,20 +126,42 @@ class OrderMatcher:
 
         # 6. Umumiy kategoriya bo'yicha zaxira (ombordagi birinchi mavjud tovar)
         cat_triggers = {
+            "svitir": "Svitir",
+            "sviter": "Svitir",
+            "kofta": "Svitir",
+            "xudi": "Svitir",
+            "kurtka": "Kurtka",
+            "vitrofka": "Kurtka",
+            "vetrovka": "Kurtka",
+            "tapichka": "Oyoq kiyim",
+            "shippak": "Oyoq kiyim",
+            "krossovka": "Oyoq kiyim",
+            "krasovka": "Oyoq kiyim",
+            "poyabzal": "Oyoq kiyim",
+            "oyoq kiyim": "Oyoq kiyim",
             "futbolka": "Futbolka",
-            "jinsi": "Jinsi",
+            "jinsi": "Shim",
+            "triko": "Shim",
+            "shim": "Shim",
             "ko'ylak": "Ko'ylak",
             "koylak": "Ko'ylak",
-            "kurtka": "Kurtka",
-            "palto": "Palto",
-            "paypoq": "Paypoq",
-            "kepka": "Kepka",
-            "ichki kiyim": "Ichki kiyim",
-            "shim": "Shim"
+            "tonika": "Ko'ylak",
+            "kostyum": "Kostyum",
+            "sportivka": "Kostyum",
+            "kardigan": "Kardigan",
+            "pijama": "Pijama",
+            "palto": "Kurtka",
+            "tekstil": "Uy tekstili",
+            "pastel": "Uy tekstili",
+            "ichki kiyim": "Ichki kiyim"
         }
         for kw, cat_name in cat_triggers.items():
             if kw in t_low:
-                cat_prods = [p for p in all_prods if p.get("category") == cat_name and p.get("stock_quantity", 0) > 0]
+                cat_prods = [
+                    p for p in all_prods
+                    if (p.get("category") == cat_name or cat_name.lower() in p.get("category", "").lower() or kw in p.get("name", "").lower())
+                    and p.get("stock_quantity", 0) > 0
+                ]
                 if cat_prods:
                     return cat_prods[0]
 
@@ -166,35 +188,114 @@ class OrderMatcher:
 
         all_prods = DatabaseManager.get_products(in_stock_only=False)
 
-        # 2. Toifa (kategoriya) bo'yicha ko'plik
-        cat_triggers = {
-            "futbolka": "Futbolka",
-            "jinsi": "Jinsi",
-            "ko'ylak": "Ko'ylak",
-            "koylak": "Ko'ylak",
-            "kurtka": "Kurtka",
-            "palto": "Palto",
-            "paypoq": "Paypoq",
-            "kepka": "Kepka",
-            "ichki kiyim": "Ichki kiyim",
-            "shim": "Shim",
-            "krossovka": "Krossovka",
-            "krasovka": "Krossovka",
-            "poyabzal": "Poyabzal"
-        }
-        for kw, cat_name in cat_triggers.items():
-            if kw in t_low:
-                matches = [
-                    p for p in all_prods
-                    if cat_name.lower() in p.get("category", "").lower() or cat_name.lower() in p.get("name", "").lower()
-                ]
-                if len(matches) > 1:
-                    return matches[:max_limit]
-                elif len(matches) == 1:
-                    return matches
+        # 2. Mijoz "boshqa turlari", "boshqa variantlar", "yana qanaqa bor" desa - avvalgi tovar toifasini olish
+        variant_inquiry_words = ["boshqa turlari", "boshqa variant", "turlarini", "turlari", "yana qanaqa", "boshqacha", "boshqalari", "yana bormi"]
+        if any(w in t_low for w in variant_inquiry_words) and history:
+            for msg in reversed(history[-4:]):
+                c_low = msg.get("content", "").lower()
+                for p in all_prods:
+                    if p.get("name", "").lower() in c_low or str(p.get("id")) in c_low:
+                        cat_matches = [item for item in all_prods if item.get("category") == p.get("category") and item.get("id") != p.get("id")]
+                        if cat_matches:
+                            return cat_matches[:max_limit]
 
-        # 3. Brend bo'yicha
-        for brand in ["zara", "nike", "adidas", "h&m", "lc waikiki", "uztex", "pull&bear", "defacto"]:
+        # 3. Kategoriya va mahsulot turlari bo'yicha aniq saralash (Real 41 ta tovar uchun)
+        # 3a. Oyoq kiyim / Tapichka / Krossovka alohida turlari
+        if any(w in t_low for w in ["tapichka", "shippak", "slansi", "tapochka"]):
+            tap_matches = [p for p in all_prods if "tapichka" in p.get("name", "").lower() or "shippak" in p.get("name", "").lower()]
+            if tap_matches:
+                return tap_matches[:max_limit]
+
+        if any(w in t_low for w in ["krossovka", "krasovka", "kedalar", "keta"]):
+            kros_matches = [p for p in all_prods if "krossovka" in p.get("name", "").lower()]
+            if kros_matches:
+                return kros_matches[:max_limit]
+
+        if any(w in t_low for w in ["oyoq kiyim", "poyabzal", "poyafzal", "oyoq kiyimi"]):
+            shoes = [p for p in all_prods if p.get("category") == "Oyoq kiyim"]
+            if shoes:
+                return shoes[:max_limit]
+
+        # 3b. Kurtkalar va vitrofkalar
+        if any(w in t_low for w in ["kurtka", "vitrofka", "vetrovka", "jilet", "nimcha", "plash"]):
+            kurtkas = [p for p in all_prods if p.get("category") == "Kurtka" or "vitrofka" in p.get("name", "").lower() or "kurtka" in p.get("name", "").lower()]
+            if kurtkas:
+                return kurtkas[:max_limit]
+
+        # 3c. Svitirlar, sviterlar, koftalar, xudilar
+        if any(w in t_low for w in ["svitir", "sviter", "kofta", "xudi", "hoodie", "pulover", "jumper", "svitshot"]):
+            sviters = [p for p in all_prods if p.get("category") == "Svitir" or "svitir" in p.get("name", "").lower() or "sviter" in p.get("name", "").lower() or "kofta" in p.get("name", "").lower()]
+            if sviters:
+                return sviters[:max_limit]
+
+        # 3d. Ko'ylaklar, tonikalar, yubkalar
+        if any(w in t_low for w in ["ko'ylak", "koylak", "koʻylak", "tonika", "dvoyka", "yubka"]):
+            dresses = [p for p in all_prods if p.get("category") == "Ko'ylak" or "ko'ylak" in p.get("name", "").lower() or "tonika" in p.get("name", "").lower()]
+            if dresses:
+                return dresses[:max_limit]
+
+        # 3e. Shimlar, jinsilar, trikolar
+        if any(w in t_low for w in ["shim", "jinsi", "triko", "bryuk"]):
+            pants = [p for p in all_prods if p.get("category") == "Shim" or "shim" in p.get("name", "").lower() or "jinsi" in p.get("name", "").lower() or "triko" in p.get("name", "").lower()]
+            if pants:
+                return pants[:max_limit]
+
+        # 3f. Kostyumlar va sportivkalar
+        if any(w in t_low for w in ["kostyum", "sportivka", "troyka"]):
+            suits = [p for p in all_prods if p.get("category") == "Kostyum" or "kostyum" in p.get("name", "").lower() or "sportivka" in p.get("name", "").lower()]
+            if suits:
+                return suits[:max_limit]
+
+        # 3g. Kardiganlar
+        if any(w in t_low for w in ["kardigan", "jaket"]):
+            cardigans = [p for p in all_prods if p.get("category") == "Kardigan" or "kardigan" in p.get("name", "").lower()]
+            if cardigans:
+                return cardigans[:max_limit]
+
+        # 3h. Pijamalar
+        if any(w in t_low for w in ["pijama", "uy kiyimi"]):
+            pijamas = [p for p in all_prods if p.get("category") == "Pijama" or "pijama" in p.get("name", "").lower()]
+            if pijamas:
+                return pijamas[:max_limit]
+
+        # 3i. Bolalar kiyimlari
+        if any(w in t_low for w in ["bolalar kiyimi", "bolalar", "chaqaloq", "bolalarga"]):
+            kids = [p for p in all_prods if p.get("gender") == "Bolalar" or "bolalar" in p.get("name", "").lower() or p.get("category") == "Bolalar kiyimi"]
+            if kids:
+                return kids[:max_limit]
+
+        # 3j. Ayollar kiyimlari
+        if any(w in t_low for w in ["ayollar kiyimi", "ayollar", "ayol", "qizlar"]):
+            women = [p for p in all_prods if p.get("gender") == "Ayol" or p.get("category") in ["Ko'ylak", "Kardigan"]]
+            if women:
+                return women[:max_limit]
+
+        # 3k. Erkaklar kiyimlari
+        if any(w in t_low for w in ["erkaklar kiyimi", "erkaklar", "erkak"]):
+            men = [p for p in all_prods if p.get("gender") == "Erkak"]
+            if men:
+                return men[:max_limit]
+
+        # 3l. Futbolkalar va Uy tekstili
+        if any(w in t_low for w in ["futbolka", "mayka"]):
+            tshirts = [p for p in all_prods if p.get("category") == "Futbolka" or "futbolka" in p.get("name", "").lower()]
+            if tshirts:
+                return tshirts[:max_limit]
+
+        if any(w in t_low for w in ["uy tekstili", "tekstil", "pastel", "postel", "jild", "choyshab"]):
+            textile = [p for p in all_prods if p.get("category") == "Uy tekstili" or "pastel" in p.get("name", "").lower()]
+            if textile:
+                return textile[:max_limit]
+
+        # 3m. Umumiy kiyimlar yoki do'kon katalogi so'ralganda
+        if any(w in t_low for w in ["qanday kiyimlar bor", "nimalar bor", "qanaqa kiyim", "do'konda nima bor", "assortiment", "katalog"]):
+            # Har xil toifadagi eng mashhur tovarlardan sara 3 tasini taqdim etish
+            samples = [p for p in all_prods if p.get("id") in [15, 4, 1]]
+            if len(samples) >= 2:
+                return samples[:max_limit]
+
+        # 4. Brend bo'yicha
+        for brand in ["zara", "nike", "adidas", "h&m", "lc waikiki", "uztex", "pull&bear", "defacto", "polo", "boss"]:
             if brand in t_low:
                 brand_prods = [
                     p for p in all_prods
@@ -205,9 +306,92 @@ class OrderMatcher:
                 elif len(brand_prods) == 1:
                     return brand_prods
 
-        # 4. Yagona mahsulotni aniqlash
+        # 5. Yagona mahsulotni aniqlash
         single = cls.match_product(text, history=history)
         return [single] if single else []
+
+    @classmethod
+    def get_category_variants(
+        cls,
+        category_or_product: Any,
+        exclude_ids: Optional[List[int]] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Mijoz so'ragan mahsulot toifasidagi barcha boshqa turlarni (variantlarni) aniqlab,
+        chiroyli konsultatsiya matni va katalog tugmasini tayyorlash.
+        """
+        exclude_ids = exclude_ids or []
+        cat_name = ""
+        cat_key = ""
+
+        if isinstance(category_or_product, dict):
+            cat_name = category_or_product.get("category", "")
+            cat_key = cat_name
+        elif isinstance(category_or_product, str):
+            cat_name = category_or_product
+            cat_key = category_or_product
+
+        if not cat_name:
+            return None
+
+        # Friendly titles & standard category callback keys
+        title_map = {
+            "Kurtka": ("Kurtkalar & Vitrofkalar", "Kurtka"),
+            "Svitir": ("Svitirlar & Koftalar", "Svitir"),
+            "Ko'ylak": ("Ko'ylaklar & Tonikalar", "Ko'ylak"),
+            "Shim": ("Shimlar & Trikolar", "Shim"),
+            "Oyoq kiyim": ("Poyabzal & Tapichkalar", "Oyoq kiyim"),
+            "Kostyum": ("Kostyumlar & Sportivkalar", "Kostyum"),
+            "Kardigan": ("Kardiganlar", "Kardigan"),
+            "Pijama": ("Pijamalar", "Pijama"),
+            "Bolalar kiyimi": ("Bolalar kiyimlari", "Bolalar"),
+            "Bolalar": ("Bolalar kiyimlari", "Bolalar"),
+            "Futbolka": ("Futbolkalar", "Futbolka"),
+            "Uy tekstili": ("Uy tekstili & Choyshablar", "Uy tekstili"),
+            "Ayol": ("Ayollar kiyimlari", "Ko'ylak"),
+            "Erkak": ("Erkaklar kiyimlari", "Kurtka")
+        }
+
+        friendly_title, cb_key = title_map.get(cat_name, (cat_name, cat_name))
+
+        all_cat_prods = DatabaseManager.get_products(category=cat_name, in_stock_only=True)
+        if not all_cat_prods:
+            all_cat_prods = DatabaseManager.get_products(category=cat_name, in_stock_only=False)
+
+        total_count = len(all_cat_prods)
+        other_variants = [p for p in all_cat_prods if p.get("id") not in exclude_ids]
+
+        if not other_variants:
+            return {
+                "total_count": total_count,
+                "category_title": friendly_title,
+                "category_key": cb_key,
+                "other_variants": [],
+                "summary_text": f"✨ Bizda jami **{total_count} ta model** mavjud. Barcha saralangan namunalar yuqorida ko'rsatildi.",
+                "button_text": f"🛍️ Barcha {friendly_title}ni ko'rish ({total_count} ta model)"
+            }
+
+        lines = [f"✨ **Do'konimizda jami {total_count} xil {friendly_title} modellari mavjud:**\n"]
+        for p in other_variants[:4]:
+            p_name = p.get("name", "Model")
+            p_price = p.get("sale_price") or p.get("price", 0)
+            p_size = p.get("size", "")
+            size_part = f" (O'lcham: {p_size})" if p_size else ""
+            lines.append(f"• **{p_name}** — {p_price:,.0f} so'm{size_part}")
+
+        if len(other_variants) > 4:
+            lines.append(f"• *...va yana {len(other_variants) - 4} ta boshqa sara modellar!*")
+
+        lines.append("\nBarcha modellarni birma-bir tomosha qilish uchun quyidagi tugmani bosing 👇")
+
+        return {
+            "total_count": total_count,
+            "category_title": friendly_title,
+            "category_key": cb_key,
+            "other_variants": other_variants,
+            "summary_text": "\n".join(lines),
+            "button_text": f"🛍️ Barcha {friendly_title}ni ko'rish ({total_count} ta model)"
+        }
 
     @classmethod
     def _match_ordinal_from_history(cls, text: str, history: List[Dict[str, str]]) -> Optional[Dict[str, Any]]:

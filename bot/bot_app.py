@@ -1192,8 +1192,9 @@ async def handle_add_product_prompt(message: types.Message):
 def format_product_card(prod: Dict[str, Any], category: str, idx: int, total: int) -> str:
     stock = prod.get("stock_quantity", 0)
     stock_badge = "🟢 Omborda mavjud" if stock > 2 else (f"🔥 Shoshiling, oxirgi {stock} ta qoldi!" if stock > 0 else "🔴 Hozircha tugagan")
+    img_preview = f"[\u200b]({prod['image_url']})" if prod.get("image_url") else ""
     return (
-        f"🛍 **{prod['name']}**\n\n"
+        f"{img_preview}🛍 **{prod['name']}**\n\n"
         f"📁 Bo'lim: **{category}**\n"
         f"📏 Mavjud o'lchamlar: `{prod['size']}`\n"
         f"🎨 Rangi: `{prod['color']}`\n"
@@ -1333,8 +1334,9 @@ async def handle_cart_add(callback: types.CallbackQuery):
         await callback.answer(f"⚠️ {res['message']}", show_alert=True)
 
 @dp.callback_query(F.data.startswith("fast_buy_"))
+@dp.callback_query(F.data.startswith("buy_"))
 async def handle_fast_buy(callback: types.CallbackQuery):
-    p_id = int(callback.data.replace("fast_buy_", ""))
+    p_id = int(callback.data.replace("fast_buy_", "").replace("buy_", ""))
     user_id = callback.from_user.id
     prod = DatabaseManager.get_product_by_id(p_id)
     if not prod:
@@ -2272,17 +2274,26 @@ async def handle_private_chat(message: types.Message):
 
         # Mahsulot haqida so'ralgan yoki qidirilgan bo'lsa, rasmli taqdimot yuborish (Task 2: Requirements 1 & 2)
         product_query_triggers = [
-            "bormi", "bor mi", "narxi", "qancha", "necha", "rasm", "rasmi", "foto",
-            "kursat", "ko'rsat", "koʻrsat", "haqida", "ma'lumot",
-            "tavsiya", "variant", "razmer", "o'lcham", "kurtka", "krossovka", "krasovka",
-            "futbolka", "shim", "ko'ylak", "koylak", "palto", "paypoq", "kepka",
-            "zara", "nike", "adidas", "uztex", "defacto", "pull&bear", "h&m"
+            "bormi", "bor mi", "bor", "narxi", "qancha", "necha", "rasm", "rasmi", "rasmini", "rasmlari", "foto", "surat",
+            "kursat", "ko'rsat", "koʻrsat", "ko'rsating", "kursating", "tashlang", "haqida", "ma'lumot",
+            "tavsiya", "variant", "variantlar", "turi", "turlari", "turlarini", "razmer", "o'lcham", "olcham",
+            "kurtka", "vitrofka", "vetrovka", "jilet", "nimcha",
+            "sviter", "svitir", "kofta", "xudi", "hoodie", "pulover", "jumper",
+            "krossovka", "krasovka", "tapichka", "shippak", "poyabzal", "oyoq kiyim",
+            "futbolka", "mayka", "shim", "jinsi", "triko",
+            "ko'ylak", "koylak", "koʻylak", "tonika", "dvoyka", "yubka",
+            "kostyum", "sportivka", "troyka", "kardigan", "pijama",
+            "bolalar", "chaqaloq", "ayollar", "erkaklar", "qizlar",
+            "qanday", "qanaqa", "nimalar", "modellar", "kolleksiya",
+            "zara", "nike", "adidas", "uztex", "defacto", "pull&bear", "h&m", "polo", "boss"
         ]
         is_asking_product = (
             any(w in text_lower for w in product_query_triggers)
             or bool(re.search(r"\b(?:kk[-_\s]?)(\d{4})\b", text_lower))
             or bool(re.search(r"(?:#|buy_|id\s*|tovar\s*|mahsulot\s*)(\d{1,3})", text_lower))
             or (first_matched.get("name", "").lower() in text_lower)
+            or (first_matched.get("category", "").lower() in text_lower)
+            or len(matched_prods) >= 1
         )
         if is_asking_product:
             set_pending_order(user_id, first_matched)
@@ -2290,7 +2301,8 @@ async def handle_private_chat(message: types.Message):
                 bot=bot,
                 chat_id=message.chat.id,
                 products=matched_prods[:3],
-                safe_send_fn=safe_send
+                safe_send_fn=safe_send,
+                suggest_variants=True
             )
             # TASK 4: Cross-sell - suggest ONE related in-stock item once per conversation
             cs_sugg = SalesIntelligence.get_cross_sell_suggestion(first_matched["id"], chat_id=message.chat.id)
