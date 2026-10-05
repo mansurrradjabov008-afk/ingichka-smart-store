@@ -1,1384 +1,1253 @@
 [
   {
     "id": 1,
-    "sku": "KK-1002",
-    "name": "Adidas Printli futbolka Ko'k",
-    "category": "Futbolka",
-    "brand": "Adidas",
-    "price": 200000,
-    "cost_price": 121853,
+    "sku": "MS-1001",
+    "name": "Poplin ayollar ko'ylak komplekt",
+    "category": "Ko'ylak",
+    "brand": "MarkazSavdo",
+    "price": 70000,
+    "cost_price": 45000,
     "sizes": [
-      "XXL"
+      "48"
     ],
     "colors": [
-      "ko'k"
+      "to'q sariq gulli",
+      "sariq"
     ],
-    "gender": "Bolalar",
-    "material": "Paxta 100%",
-    "stock": 43,
+    "gender": "Ayol",
+    "material": "Poplin 100%",
+    "stock": 12,
+    "min_stock": 2,
+    "supplier": "Toshkent Tikuvchilik",
+    "status": "Mavjud",
+    "aliases": [
+      "poplin koylak",
+      "ayollar koylagi",
+      "gulli koylak",
+      "poplin komplekt",
+      "ayollar ko'ylagi",
+      "poplin"
+    ],
+    "image_url": "https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=600"
+  },
+  {
+    "id": 2,
+    "sku": "MS-1002",
+    "name": "Ayollar naqshli ko'ylak komplekt",
+    "category": "Ko'ylak",
+    "brand": "MarkazSavdo",
+    "price": 180000,
+    "cost_price": 120000,
+    "sizes": [
+      "Standart"
+    ],
+    "colors": [
+      "jigarrang",
+      "bej"
+    ],
+    "gender": "Ayol",
+    "material": "Bambuk / Trikotaj",
+    "stock": 8,
+    "min_stock": 2,
+    "supplier": "Samarqand Tekstil",
+    "status": "Mavjud",
+    "aliases": [
+      "naqshli koylak",
+      "ayollar komplekt",
+      "dvoyka koylak",
+      "jigarrang koylak",
+      "naqshli komplekt"
+    ],
+    "image_url": "https://images.unsplash.com/photo-1585487000160-6ebcfceb0d03?w=600"
+  },
+  {
+    "id": 3,
+    "sku": "MS-1003",
+    "name": "Qizlar keng bichimli jinsi shim",
+    "category": "Shim",
+    "brand": "MarkazSavdo",
+    "price": 100000,
+    "cost_price": 65000,
+    "sizes": [
+      "Standart",
+      "28",
+      "30"
+    ],
+    "colors": [
+      "moviy",
+      "och ko'k"
+    ],
+    "gender": "Ayol",
+    "material": "Jinsi (Denim)",
+    "stock": 10,
+    "min_stock": 2,
+    "supplier": "Turkiya Import",
+    "status": "Mavjud",
+    "aliases": [
+      "keng jinsi",
+      "qizlar jinsisi",
+      "moviy jinsi",
+      "keng bichimli shim",
+      "ayollar jinsi"
+    ],
+    "image_url": "https://images.unsplash.com/photo-1541099649105-f69ad21f3246?w=600"
+  },
+  {
+    "id": 4,
+    "sku": "MS-1004",
+    "name": "Polo erkaklar svitir kofta",
+    "category": "Svitir",
+    "brand": "Polo",
+    "price": 75000,
+    "cost_price": 48000,
+    "sizes": [
+      "L",
+      "XL"
+    ],
+    "colors": [
+      "kulrang",
+      "oq"
+    ],
+    "gender": "Erkak",
+    "material": "Trikotaj paxta",
+    "stock": 14,
     "min_stock": 3,
     "supplier": "Guangzhou Trade",
     "status": "Mavjud",
     "aliases": [
-      "adidas futbolka",
-      "printli futbolka",
-      "ko'k futbolka",
-      "adidas",
-      "futbolka",
-      "синяя футболка",
-      "футболка адидас",
-      "adidas printli futbolka"
+      "polo svitir",
+      "polo kofta",
+      "erkaklar sviteri",
+      "kulrang polo",
+      "polo"
+    ],
+    "image_url": "https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?w=600"
+  },
+  {
+    "id": 5,
+    "sku": "MS-1005",
+    "name": "Erkaklar sportivka kostyumi",
+    "category": "Kostyum",
+    "brand": "MarkazSavdo",
+    "price": 150000,
+    "cost_price": 100000,
+    "sizes": [
+      "56",
+      "58",
+      "60"
+    ],
+    "colors": [
+      "to'q ko'k"
+    ],
+    "gender": "Erkak",
+    "material": "Elastik sport trikotaj",
+    "stock": 6,
+    "min_stock": 2,
+    "supplier": "Toshkent Sport",
+    "status": "Mavjud",
+    "aliases": [
+      "sportivka kostyum",
+      "katta razmer sportivka",
+      "erkaklar sportivkasi",
+      "sport kiyim"
+    ],
+    "image_url": "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=600"
+  },
+  {
+    "id": 6,
+    "sku": "MS-1006",
+    "name": "Erkaklar yumshoq ko'k svitir",
+    "category": "Svitir",
+    "brand": "MarkazSavdo",
+    "price": 50000,
+    "cost_price": 32000,
+    "sizes": [
+      "L",
+      "XL",
+      "2XL"
+    ],
+    "colors": [
+      "ko'k"
+    ],
+    "gender": "Erkak",
+    "material": "Paxta trikotaj",
+    "stock": 15,
+    "min_stock": 3,
+    "supplier": "Buxoro Trikotaj",
+    "status": "Mavjud",
+    "aliases": [
+      "kok svitir",
+      "yumshoq svitir",
+      "erkaklar ko'k sviteri",
+      "arzon svitir"
+    ],
+    "image_url": "https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?w=600"
+  },
+  {
+    "id": 7,
+    "sku": "MS-1007",
+    "name": "Erkaklar klassik qora svitir",
+    "category": "Svitir",
+    "brand": "MarkazSavdo",
+    "price": 45000,
+    "cost_price": 28000,
+    "sizes": [
+      "XL",
+      "XXL",
+      "XXXL"
+    ],
+    "colors": [
+      "qora"
+    ],
+    "gender": "Erkak",
+    "material": "Trikotaj",
+    "stock": 20,
+    "min_stock": 3,
+    "supplier": "Buxoro Trikotaj",
+    "status": "Mavjud",
+    "aliases": [
+      "qora svitir",
+      "klassik svitir",
+      "erkaklar qora sviteri",
+      "arzon qora svitir"
+    ],
+    "image_url": "https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?w=600"
+  },
+  {
+    "id": 8,
+    "sku": "MS-1008",
+    "name": "Erkaklar sport triko shimi",
+    "category": "Shim",
+    "brand": "MarkazSavdo",
+    "price": 75000,
+    "cost_price": 48000,
+    "sizes": [
+      "48",
+      "50",
+      "52",
+      "54",
+      "56",
+      "58"
+    ],
+    "colors": [
+      "qora"
+    ],
+    "gender": "Erkak",
+    "material": "Sportiv triko",
+    "stock": 18,
+    "min_stock": 3,
+    "supplier": "Toshkent Sport",
+    "status": "Mavjud",
+    "aliases": [
+      "sport triko",
+      "erkaklar trikosi",
+      "qora triko",
+      "sport shimi"
+    ],
+    "image_url": "https://images.unsplash.com/photo-1541099649105-f69ad21f3246?w=600"
+  },
+  {
+    "id": 9,
+    "sku": "MS-1009",
+    "name": "Bolalar qora triko shimi",
+    "category": "Shim",
+    "brand": "MarkazSavdo",
+    "price": 25000,
+    "cost_price": 15000,
+    "sizes": [
+      "48",
+      "50"
+    ],
+    "colors": [
+      "qora"
+    ],
+    "gender": "Bolalar",
+    "material": "Sport triko",
+    "stock": 2,
+    "min_stock": 2,
+    "supplier": "Toshkent Bolalar",
+    "status": "Kam qolgan",
+    "aliases": [
+      "bolalar trikosi",
+      "qora bolalar shimi",
+      "kichik triko"
+    ],
+    "image_url": "https://images.unsplash.com/photo-1519725392576-96a84f3eb48c?w=600"
+  },
+  {
+    "id": 10,
+    "sku": "MS-1010",
+    "name": "Erkaklar yoqali Polo svitir",
+    "category": "Svitir",
+    "brand": "Polo",
+    "price": 90000,
+    "cost_price": 58000,
+    "sizes": [
+      "L",
+      "XL",
+      "2XL",
+      "3XL"
+    ],
+    "colors": [
+      "moviy"
+    ],
+    "gender": "Erkak",
+    "material": "Qalin paxta",
+    "stock": 0,
+    "min_stock": 2,
+    "supplier": "Turkiya Import",
+    "status": "Tugagan",
+    "aliases": [
+      "yoqali polo",
+      "moviy polo svitir",
+      "polo yoqali svitir"
+    ],
+    "image_url": "https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?w=600"
+  },
+  {
+    "id": 11,
+    "sku": "MS-1011",
+    "name": "Erkaklar tugmali to'q ko'k svitir",
+    "category": "Svitir",
+    "brand": "MarkazSavdo",
+    "price": 85000,
+    "cost_price": 55000,
+    "sizes": [
+      "L",
+      "XL",
+      "2XL",
+      "3XL"
+    ],
+    "colors": [
+      "to'q ko'k"
+    ],
+    "gender": "Erkak",
+    "material": "Paxta / Jun aralash",
+    "stock": 11,
+    "min_stock": 2,
+    "supplier": "Samarqand Tekstil",
+    "status": "Mavjud",
+    "aliases": [
+      "tugmali svitir",
+      "to'q ko'k svitir",
+      "tugmali kofta"
+    ],
+    "image_url": "https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?w=600"
+  },
+  {
+    "id": 12,
+    "sku": "MS-1012",
+    "name": "Ayollar charmli shippak tapichka",
+    "category": "Oyoq kiyim",
+    "brand": "MarkazSavdo",
+    "price": 43000,
+    "cost_price": 26000,
+    "sizes": [
+      "36",
+      "37",
+      "38",
+      "39",
+      "40"
+    ],
+    "colors": [
+      "qora",
+      "jigarrang"
+    ],
+    "gender": "Ayol",
+    "material": "Sun'iy charm",
+    "stock": 15,
+    "min_stock": 3,
+    "supplier": "Andijon Charm",
+    "status": "Mavjud",
+    "aliases": [
+      "charmli tapichka",
+      "charmli shippak",
+      "ayollar tapichkasi",
+      "ayollar shippagi"
+    ],
+    "image_url": "https://images.unsplash.com/photo-1549298916-b41d501d3772?w=600"
+  },
+  {
+    "id": 13,
+    "sku": "MS-1013",
+    "name": "Ayollar guldor matoli tapichka",
+    "category": "Oyoq kiyim",
+    "brand": "MarkazSavdo",
+    "price": 33000,
+    "cost_price": 20000,
+    "sizes": [
+      "36",
+      "37",
+      "38",
+      "39",
+      "40"
+    ],
+    "colors": [
+      "qora",
+      "bordo"
+    ],
+    "gender": "Ayol",
+    "material": "Guldor mato",
+    "stock": 16,
+    "min_stock": 3,
+    "supplier": "Andijon Charm",
+    "status": "Mavjud",
+    "aliases": [
+      "guldor tapichka",
+      "matoli tapichka",
+      "bordo tapichka"
+    ],
+    "image_url": "https://images.unsplash.com/photo-1549298916-b41d501d3772?w=600"
+  },
+  {
+    "id": 14,
+    "sku": "MS-1014",
+    "name": "Ayollar naqshli moviy tapichka",
+    "category": "Oyoq kiyim",
+    "brand": "MarkazSavdo",
+    "price": 20000,
+    "cost_price": 12000,
+    "sizes": [
+      "36",
+      "37",
+      "38",
+      "39",
+      "40"
+    ],
+    "colors": [
+      "to'q ko'k",
+      "moviy"
+    ],
+    "gender": "Ayol",
+    "material": "Mato",
+    "stock": 12,
+    "min_stock": 3,
+    "supplier": "Andijon Charm",
+    "status": "Mavjud",
+    "aliases": [
+      "moviy tapichka",
+      "naqshli tapichka",
+      "arzon tapichka"
+    ],
+    "image_url": "https://images.unsplash.com/photo-1549298916-b41d501d3772?w=600"
+  },
+  {
+    "id": 15,
+    "sku": "MS-1015",
+    "name": "Erkaklar kulrang vitrofka kurtka",
+    "category": "Kurtka",
+    "brand": "MarkazSavdo",
+    "price": 100000,
+    "cost_price": 65000,
+    "sizes": [
+      "50",
+      "52",
+      "54",
+      "56"
+    ],
+    "colors": [
+      "kulrang"
+    ],
+    "gender": "Erkak",
+    "material": "Plashovka / Suv o'tkazmas",
+    "stock": 10,
+    "min_stock": 2,
+    "supplier": "Xitoy Import",
+    "status": "Mavjud",
+    "aliases": [
+      "kulrang vitrofka",
+      "vitrofka kurtka",
+      "erkaklar vitrofkasi",
+      "yengil kurtka"
+    ],
+    "image_url": "https://images.unsplash.com/photo-1544441893-675973e31985?w=600"
+  },
+  {
+    "id": 16,
+    "sku": "MS-1016",
+    "name": "Erkaklar kapyushonli moviy vitrofka",
+    "category": "Kurtka",
+    "brand": "MarkazSavdo",
+    "price": 140000,
+    "cost_price": 90000,
+    "sizes": [
+      "50",
+      "52",
+      "54",
+      "56"
+    ],
+    "colors": [
+      "moviy",
+      "to'q ko'k"
+    ],
+    "gender": "Erkak",
+    "material": "Plashovka",
+    "stock": 9,
+    "min_stock": 2,
+    "supplier": "Xitoy Import",
+    "status": "Mavjud",
+    "aliases": [
+      "kapyushonli vitrofka",
+      "moviy vitrofka",
+      "kapyushonli kurtka"
+    ],
+    "image_url": "https://images.unsplash.com/photo-1544441893-675973e31985?w=600"
+  },
+  {
+    "id": 17,
+    "sku": "MS-1017",
+    "name": "Erkaklar zamonaviy qora vitrofka",
+    "category": "Kurtka",
+    "brand": "MarkazSavdo",
+    "price": 110000,
+    "cost_price": 72000,
+    "sizes": [
+      "50",
+      "52",
+      "54",
+      "56"
+    ],
+    "colors": [
+      "qora"
+    ],
+    "gender": "Erkak",
+    "material": "Plashovka",
+    "stock": 12,
+    "min_stock": 2,
+    "supplier": "Xitoy Import",
+    "status": "Mavjud",
+    "aliases": [
+      "qora vitrofka",
+      "zamonaviy vitrofka",
+      "qora kurtka"
+    ],
+    "image_url": "https://images.unsplash.com/photo-1544441893-675973e31985?w=600"
+  },
+  {
+    "id": 18,
+    "sku": "MS-1018",
+    "name": "Erkaklar klassik qora vitrofka",
+    "category": "Kurtka",
+    "brand": "MarkazSavdo",
+    "price": 150000,
+    "cost_price": 98000,
+    "sizes": [
+      "50",
+      "52",
+      "54",
+      "56"
+    ],
+    "colors": [
+      "qora"
+    ],
+    "gender": "Erkak",
+    "material": "Sifatli plashovka",
+    "stock": 8,
+    "min_stock": 2,
+    "supplier": "Turkiya Import",
+    "status": "Mavjud",
+    "aliases": [
+      "klassik vitrofka",
+      "qora klassik vitrofka",
+      "sifatli kurtka"
+    ],
+    "image_url": "https://images.unsplash.com/photo-1544441893-675973e31985?w=600"
+  },
+  {
+    "id": 19,
+    "sku": "MS-1019",
+    "name": "Chaqaloqlar konverti va Ryukzak",
+    "category": "Bolalar kiyimi",
+    "brand": "MarkazSavdo",
+    "price": 90000,
+    "cost_price": 60000,
+    "sizes": [
+      "Standart"
+    ],
+    "colors": [
+      "moviy",
+      "qora"
+    ],
+    "gender": "Bolalar",
+    "material": "Paxta / Sintifon",
+    "stock": 5,
+    "min_stock": 2,
+    "supplier": "Toshkent Baby",
+    "status": "Mavjud",
+    "aliases": [
+      "chaqaloqlar konverti",
+      "ryukzak konvert",
+      "bolalar sumkasi",
+      "chaqaloq konverti"
+    ],
+    "image_url": "https://images.unsplash.com/photo-1519725392576-96a84f3eb48c?w=600"
+  },
+  {
+    "id": 20,
+    "sku": "MS-1020",
+    "name": "O'zbekiston bolalar futbolkasi",
+    "category": "Futbolka",
+    "brand": "MarkazSavdo",
+    "price": 8000,
+    "cost_price": 5000,
+    "sizes": [
+      "3 yosh",
+      "4 yosh",
+      "5 yosh"
+    ],
+    "colors": [
+      "oq",
+      "havorang"
+    ],
+    "gender": "Bolalar",
+    "material": "Paxta 100%",
+    "stock": 30,
+    "min_stock": 5,
+    "supplier": "Namangan Paxta",
+    "status": "Mavjud",
+    "aliases": [
+      "ozbekiston futbolka",
+      "bolalar futbolkasi",
+      "arzon futbolka",
+      "oq futbolka"
     ],
     "image_url": "https://images.unsplash.com/photo-1581655353564-df123a1eb820?w=600"
   },
   {
-    "id": 2,
-    "sku": "KK-1001",
-    "name": "Local Brand UZ Oddiy futbolka Ko'k",
-    "category": "Futbolka",
-    "brand": "Local Brand UZ",
-    "price": 118000,
-    "cost_price": 87811,
-    "sizes": [
-      "L"
-    ],
-    "colors": [
-      "ko'k"
-    ],
-    "gender": "Ayol",
-    "material": "Paxta 100%",
-    "stock": 23,
-    "min_stock": 3,
-    "supplier": "Istanbul Import",
-    "status": "Mavjud",
-    "aliases": [
-      "oddiy futbolka",
-      "ayollar futbolkasi",
-      "local brand futbolka",
-      "ko'k futbolka ayollar",
-      "футболка"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?w=600"
-  },
-  {
-    "id": 3,
-    "sku": "KK-1004",
-    "name": "Nike Polo futbolka Qizil",
-    "category": "Futbolka",
-    "brand": "Nike",
-    "price": 174000,
-    "cost_price": 100916,
-    "sizes": [
-      "XXL"
-    ],
-    "colors": [
-      "qizil"
-    ],
-    "gender": "Uniseks",
-    "material": "Polyester",
-    "stock": 28,
-    "min_stock": 7,
-    "supplier": "Istanbul Textile Co",
-    "status": "Mavjud",
-    "aliases": [
-      "nike polo",
-      "polo futbolka",
-      "qizil futbolka",
-      "nike futbolka",
-      "nike",
-      "polo",
-      "найк поло",
-      "красная футболка"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1583743814966-8936f5b7be1a?w=600"
-  },
-  {
-    "id": 4,
-    "sku": "KK-1003",
-    "name": "Reebok Sport futbolka Oq",
-    "category": "Futbolka",
-    "brand": "Reebok",
-    "price": 152000,
-    "cost_price": 91390,
-    "sizes": [
-      "L"
-    ],
-    "colors": [
-      "oq"
-    ],
-    "gender": "Erkak",
-    "material": "Paxta 95% + Elastan",
-    "stock": 17,
-    "min_stock": 7,
-    "supplier": "Dubai Fashion Hub",
-    "status": "Mavjud",
-    "aliases": [
-      "reebok futbolka",
-      "oq futbolka",
-      "sport futbolka",
-      "reebok",
-      "белая футболка",
-      "рибок"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1618354691373-d851c5c3a990?w=600"
-  },
-  {
-    "id": 5,
-    "sku": "KK-1061",
-    "name": "Adidas Sport ichki Ko'k",
-    "category": "Ichki kiyim",
-    "brand": "Adidas",
-    "price": 166000,
-    "cost_price": 106669,
-    "sizes": [
-      "S"
-    ],
-    "colors": [
-      "ko'k"
-    ],
-    "gender": "Erkak",
-    "material": "Polyester",
-    "stock": 28,
-    "min_stock": 5,
-    "supplier": "Local Factory UZ",
-    "status": "Mavjud",
-    "aliases": [
-      "adidas ichki kiyim",
-      "sport ichki kiyim",
-      "ichki kiyim",
-      "erkaklar ichki kiyimi"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=600"
-  },
-  {
-    "id": 6,
-    "sku": "KK-1058",
-    "name": "Adidas Sport ichki Qizil",
-    "category": "Ichki kiyim",
-    "brand": "Adidas",
-    "price": 251000,
-    "cost_price": 148262,
-    "sizes": [
-      "M"
-    ],
-    "colors": [
-      "qizil"
-    ],
-    "gender": "Ayol",
-    "material": "Polyester",
-    "stock": 8,
-    "min_stock": 7,
-    "supplier": "Dubai Fashion Hub",
-    "status": "Mavjud",
-    "aliases": [
-      "ayollar ichki kiyimi",
-      "adidas ayollar ichki",
-      "qizil ichki kiyim"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=600"
-  },
-  {
-    "id": 7,
-    "sku": "KK-1063",
-    "name": "Bershka Sport ichki Jigarrang",
-    "category": "Ichki kiyim",
-    "brand": "Bershka",
-    "price": 192000,
-    "cost_price": 112449,
-    "sizes": [
-      "XL"
-    ],
-    "colors": [
-      "jigarrang"
-    ],
-    "gender": "Erkak",
-    "material": "Modal",
-    "stock": 16,
-    "min_stock": 9,
-    "supplier": "Toshkent Optom",
-    "status": "Mavjud",
-    "aliases": [
-      "bershka ichki kiyim",
-      "jigarrang ichki kiyim",
-      "bershka"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=600"
-  },
-  {
-    "id": 8,
-    "sku": "KK-1060",
-    "name": "Defacto Sport ichki Bej",
-    "category": "Ichki kiyim",
-    "brand": "Defacto",
-    "price": 88000,
-    "cost_price": 55543,
-    "sizes": [
-      "S"
-    ],
-    "colors": [
-      "bej"
-    ],
-    "gender": "Ayol",
-    "material": "Polyester",
-    "stock": 14,
-    "min_stock": 10,
-    "supplier": "Local Factory UZ",
-    "status": "Mavjud",
-    "aliases": [
-      "defacto ichki kiyim",
-      "bej ichki kiyim",
-      "defacto"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=600"
-  },
-  {
-    "id": 9,
-    "sku": "KK-1059",
-    "name": "LC Waikiki Briefs Jigarrang",
-    "category": "Ichki kiyim",
-    "brand": "LC Waikiki",
-    "price": 113000,
-    "cost_price": 66747,
-    "sizes": [
-      "S"
-    ],
-    "colors": [
-      "jigarrang"
-    ],
-    "gender": "Erkak",
-    "material": "Polyester",
-    "stock": 2,
-    "min_stock": 3,
-    "supplier": "Dubai Fashion Hub",
-    "status": "Kam qolgan",
-    "aliases": [
-      "lc waikiki briefs",
-      "briefs",
-      "trusilar",
-      "waikiki ichki kiyim"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=600"
-  },
-  {
-    "id": 10,
-    "sku": "KK-1064",
-    "name": "LC Waikiki Termo ichki Ko'k",
-    "category": "Ichki kiyim",
-    "brand": "LC Waikiki",
-    "price": 159000,
-    "cost_price": 116987,
-    "sizes": [
-      "S"
-    ],
-    "colors": [
-      "ko'k"
-    ],
-    "gender": "Ayol",
-    "material": "Polyester",
-    "stock": 0,
-    "min_stock": 7,
-    "supplier": "Guangzhou Trade",
-    "status": "Tugagan",
-    "aliases": [
-      "termo ichki kiyim",
-      "lc waikiki termo",
-      "issiq ichki kiyim",
-      "termo"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=600"
-  },
-  {
-    "id": 11,
-    "sku": "KK-1062",
-    "name": "Pull&Bear Briefs Pushti",
-    "category": "Ichki kiyim",
-    "brand": "Pull&Bear",
-    "price": 96000,
-    "cost_price": 66079,
-    "sizes": [
-      "XL"
-    ],
-    "colors": [
-      "pushti"
-    ],
-    "gender": "Ayol",
-    "material": "Paxta",
-    "stock": 17,
-    "min_stock": 4,
-    "supplier": "Moscow Textile",
-    "status": "Mavjud",
-    "aliases": [
-      "pull&bear briefs",
-      "pushti ichki kiyim",
-      "pull and bear"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=600"
-  },
-  {
-    "id": 12,
-    "sku": "KK-1022",
-    "name": "Adidas Slim fit jinsi Moviy",
-    "category": "Jinsi",
-    "brand": "Adidas",
-    "price": 445000,
-    "cost_price": 256066,
-    "sizes": [
-      "34"
-    ],
-    "colors": [
-      "moviy"
-    ],
-    "gender": "Erkak",
-    "material": "Denim 98% + Elastan",
-    "stock": 12,
-    "min_stock": 8,
-    "supplier": "Guangzhou Trade",
-    "status": "Mavjud",
-    "aliases": [
-      "adidas jinsi",
-      "slim fit jinsi",
-      "moviy jinsi",
-      "jinsi",
-      "shim",
-      "джинсы адидас"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1541099649105-f69ad21f3246?w=600"
-  },
-  {
-    "id": 13,
-    "sku": "KK-1021",
-    "name": "Bershka Relaxed jinsi Moviy",
-    "category": "Jinsi",
-    "brand": "Bershka",
-    "price": 928000,
-    "cost_price": 572159,
-    "sizes": [
-      "36"
-    ],
-    "colors": [
-      "moviy"
-    ],
-    "gender": "Uniseks",
-    "material": "Denim",
-    "stock": 16,
-    "min_stock": 5,
-    "supplier": "Local Factory UZ",
-    "status": "Mavjud",
-    "aliases": [
-      "bershka jinsi",
-      "relaxed jinsi",
-      "keng jinsi",
-      "bershka jeans"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1582552938357-32b906df40cb?w=600"
-  },
-  {
-    "id": 14,
-    "sku": "KK-1023",
-    "name": "Defacto Straight jinsi Bordo",
-    "category": "Jinsi",
-    "brand": "Defacto",
-    "price": 486000,
-    "cost_price": 358656,
-    "sizes": [
-      "36"
-    ],
-    "colors": [
-      "bordo"
-    ],
-    "gender": "Uniseks",
-    "material": "Denim 98% + Elastan",
-    "stock": 5,
-    "min_stock": 5,
-    "supplier": "Toshkent Optom",
-    "status": "Kam qolgan",
-    "aliases": [
-      "defacto jinsi",
-      "straight jinsi",
-      "bordo jinsi",
-      "to'g'ri jinsi"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1541099649105-f69ad21f3246?w=600"
-  },
-  {
-    "id": 15,
-    "sku": "KK-1020",
-    "name": "Koton Slim fit jinsi Kulrang",
-    "category": "Jinsi",
-    "brand": "Koton",
-    "price": 836000,
-    "cost_price": 523520,
-    "sizes": [
-      "28"
-    ],
-    "colors": [
-      "kulrang"
-    ],
-    "gender": "Erkak",
-    "material": "Denim 98% + Elastan",
-    "stock": 33,
-    "min_stock": 6,
-    "supplier": "Dubai Fashion Hub",
-    "status": "Mavjud",
-    "aliases": [
-      "koton jinsi",
-      "kulrang jinsi",
-      "koton slim fit",
-      "koton"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1582552938357-32b906df40cb?w=600"
-  },
-  {
-    "id": 16,
-    "sku": "KK-1024",
-    "name": "Zara Straight jinsi Moviy",
-    "category": "Jinsi",
-    "brand": "Zara",
-    "price": 434000,
-    "cost_price": 268390,
-    "sizes": [
-      "32"
-    ],
-    "colors": [
-      "moviy"
-    ],
-    "gender": "Ayol",
-    "material": "Denim",
-    "stock": 14,
-    "min_stock": 3,
-    "supplier": "Istanbul Textile Co",
-    "status": "Mavjud",
-    "aliases": [
-      "zara jinsi",
-      "ayollar jinsisi",
-      "moviy jinsi ayollar",
-      "zara jeans"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1541099649105-f69ad21f3246?w=600"
-  },
-  {
-    "id": 17,
-    "sku": "KK-1075",
-    "name": "LC Waikiki Snapback Oq",
-    "category": "Kepka",
-    "brand": "LC Waikiki",
-    "price": 117000,
-    "cost_price": 65751,
-    "sizes": [
-      "One size"
-    ],
-    "colors": [
-      "oq"
-    ],
-    "gender": "Ayol",
-    "material": "Polyester",
-    "stock": 17,
-    "min_stock": 7,
-    "supplier": "Moscow Textile",
-    "status": "Mavjud",
-    "aliases": [
-      "lc waikiki snapback",
-      "oq kepka",
-      "snapback",
-      "kepka",
-      "baskir",
-      "кепка"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1588850561407-ed78c282e89b?w=600"
-  },
-  {
-    "id": 18,
-    "sku": "KK-1072",
-    "name": "Nike Yozgi kepka Bej",
-    "category": "Kepka",
-    "brand": "Nike",
-    "price": 229000,
-    "cost_price": 153969,
-    "sizes": [
-      "One size"
-    ],
-    "colors": [
-      "bej"
-    ],
-    "gender": "Ayol",
-    "material": "Polyester",
-    "stock": 46,
-    "min_stock": 7,
-    "supplier": "Istanbul Import",
-    "status": "Mavjud",
-    "aliases": [
-      "nike kepka",
-      "yozgi kepka",
-      "bej kepka",
-      "nike",
-      "найк кепка"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1588850561407-ed78c282e89b?w=600"
-  },
-  {
-    "id": 19,
-    "sku": "KK-1073",
-    "name": "Pull&Bear Yozgi kepka Kulrang",
-    "category": "Kepka",
-    "brand": "Pull&Bear",
-    "price": 138000,
-    "cost_price": 97517,
-    "sizes": [
-      "One size"
-    ],
-    "colors": [
-      "kulrang"
-    ],
-    "gender": "Ayol",
-    "material": "Paxta",
-    "stock": 65,
-    "min_stock": 10,
-    "supplier": "Moscow Textile",
-    "status": "Mavjud",
-    "aliases": [
-      "pull&bear kepka",
-      "kulrang kepka",
-      "pull and bear kepka"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1588850561407-ed78c282e89b?w=600"
-  },
-  {
-    "id": 20,
-    "sku": "KK-1074",
-    "name": "Zara Yozgi kepka Bej",
-    "category": "Kepka",
-    "brand": "Zara",
-    "price": 281000,
-    "cost_price": 171230,
-    "sizes": [
-      "One size"
-    ],
-    "colors": [
-      "bej"
-    ],
-    "gender": "Uniseks",
-    "material": "Paxta",
-    "stock": 48,
-    "min_stock": 7,
-    "supplier": "Local Factory UZ",
-    "status": "Mavjud",
-    "aliases": [
-      "zara kepka",
-      "zara yozgi kepka",
-      "bej kepka zara"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1588850561407-ed78c282e89b?w=600"
-  },
-  {
     "id": 21,
-    "sku": "KK-1005",
-    "name": "Defacto Yozgi ko'ylak Kulrang",
-    "category": "Ko'ylak",
-    "brand": "Defacto",
-    "price": 375000,
-    "cost_price": 239725,
+    "sku": "MS-1021",
+    "name": "Yozgi qulay tapichka shippak",
+    "category": "Oyoq kiyim",
+    "brand": "MarkazSavdo",
+    "price": 33000,
+    "cost_price": 20000,
     "sizes": [
-      "L"
+      "36",
+      "37",
+      "38",
+      "39",
+      "40"
     ],
     "colors": [
-      "kulrang"
+      "qora",
+      "ko'k"
     ],
-    "gender": "Uniseks",
-    "material": "Linen",
-    "stock": 70,
-    "min_stock": 4,
-    "supplier": "Istanbul Import",
+    "gender": "Ayol",
+    "material": "Rezina / Silikon",
+    "stock": 14,
+    "min_stock": 3,
+    "supplier": "Andijon Charm",
     "status": "Mavjud",
     "aliases": [
-      "defacto ko'ylak",
-      "yozgi ko'ylak",
-      "kulrang ko'ylak",
-      "ko'ylak",
-      "koylak",
-      "рубашка",
-      "платье"
+      "yozgi tapichka",
+      "yozgi shippak",
+      "silikon shippak",
+      "rezina shippak"
     ],
-    "image_url": "https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?w=600"
+    "image_url": "https://images.unsplash.com/photo-1549298916-b41d501d3772?w=600"
   },
   {
     "id": 22,
-    "sku": "KK-1010",
-    "name": "Koton Yozgi ko'ylak Jigarrang",
-    "category": "Ko'ylak",
-    "brand": "Koton",
-    "price": 368000,
-    "cost_price": 234698,
+    "sku": "MS-1022",
+    "name": "5-6 yoshli o'g'il bolalar trikosi",
+    "category": "Shim",
+    "brand": "Adidas",
+    "price": 15000,
+    "cost_price": 9000,
     "sizes": [
-      "M"
+      "5 yosh",
+      "6 yosh"
     ],
     "colors": [
-      "jigarrang"
+      "qora"
     ],
-    "gender": "Erkak",
-    "material": "Polyester + Paxta",
-    "stock": 3,
-    "min_stock": 8,
-    "supplier": "Istanbul Textile Co",
-    "status": "Kam qolgan",
+    "gender": "Bolalar",
+    "material": "Sport triko",
+    "stock": 12,
+    "min_stock": 2,
+    "supplier": "Toshkent Sport",
+    "status": "Mavjud",
     "aliases": [
-      "koton ko'ylak",
-      "erkaklar ko'ylagi",
-      "jigarrang ko'ylak"
+      "ogil bolalar trikosi",
+      "adidas bolalar trikosi",
+      "kichik triko",
+      "5 yosh triko"
     ],
-    "image_url": "https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=600"
+    "image_url": "https://images.unsplash.com/photo-1519725392576-96a84f3eb48c?w=600"
   },
   {
     "id": 23,
-    "sku": "KK-1006",
-    "name": "LC Waikiki Katta tugmali ko'ylak Pushti",
-    "category": "Ko'ylak",
-    "brand": "LC Waikiki",
-    "price": 516000,
-    "cost_price": 360325,
+    "sku": "MS-1023",
+    "name": "1-2 yoshli o'g'il bolalar trikosi",
+    "category": "Shim",
+    "brand": "MarkazSavdo",
+    "price": 8000,
+    "cost_price": 5000,
     "sizes": [
-      "L"
+      "1 yosh",
+      "2 yosh"
     ],
     "colors": [
-      "pushti"
+      "moviy",
+      "kamuflyaj"
     ],
-    "gender": "Ayol",
-    "material": "Polyester + Paxta",
-    "stock": 40,
-    "min_stock": 8,
-    "supplier": "Istanbul Import",
+    "gender": "Bolalar",
+    "material": "Paxta trikotaj",
+    "stock": 25,
+    "min_stock": 3,
+    "supplier": "Namangan Baby",
     "status": "Mavjud",
     "aliases": [
-      "lc waikiki ko'ylak",
-      "katta tugmali ko'ylak",
-      "pushti ko'ylak",
-      "ayollar ko'ylagi"
+      "chaqaloq trikosi",
+      "1 yosh triko",
+      "2 yosh triko",
+      "kichkintoy trikosi"
     ],
-    "image_url": "https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?w=600"
+    "image_url": "https://images.unsplash.com/photo-1519725392576-96a84f3eb48c?w=600"
   },
   {
     "id": 24,
-    "sku": "KK-1011",
-    "name": "Pull&Bear Klassik ko'ylak Bej",
-    "category": "Ko'ylak",
-    "brand": "Pull&Bear",
-    "price": 324000,
-    "cost_price": 194907,
+    "sku": "MS-1024",
+    "name": "2 kishilik pastel jild komplekti",
+    "category": "Uy tekstili",
+    "brand": "MarkazSavdo",
+    "price": 60000,
+    "cost_price": 38000,
     "sizes": [
-      "L"
+      "2 kishilik"
     ],
     "colors": [
-      "bej"
+      "pushti",
+      "kulrang"
     ],
-    "gender": "Erkak",
-    "material": "Paxta",
-    "stock": 0,
-    "min_stock": 4,
-    "supplier": "Istanbul Textile Co",
-    "status": "Tugagan",
+    "gender": "Uniseks",
+    "material": "Paxta / Saten",
+    "stock": 15,
+    "min_stock": 2,
+    "supplier": "Buxoro Tekstil",
+    "status": "Mavjud",
     "aliases": [
-      "pull&bear ko'ylak",
-      "klassik ko'ylak",
-      "bej ko'ylak",
-      "oqshom ko'ylagi"
+      "pastel jild",
+      "korpa jildi",
+      "yostiq jildi",
+      "choyshab komplekti",
+      "to'shak jildi"
     ],
-    "image_url": "https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?w=600"
+    "image_url": "https://images.unsplash.com/photo-1522771739844-6a9f6d5f14af?w=600"
   },
   {
     "id": 25,
-    "sku": "KK-1008",
-    "name": "Puma Ofis ko'ylagi Bej",
-    "category": "Ko'ylak",
-    "brand": "Puma",
-    "price": 273000,
-    "cost_price": 183306,
+    "sku": "MS-1025",
+    "name": "Ayollar qora kardigan kostyum",
+    "category": "Kardigan",
+    "brand": "MarkazSavdo",
+    "price": 160000,
+    "cost_price": 105000,
     "sizes": [
-      "XXL"
+      "Standart"
     ],
     "colors": [
-      "bej"
+      "qora"
     ],
-    "gender": "Erkak",
-    "material": "Paxta",
+    "gender": "Ayol",
+    "material": "Jun aralash trikotaj",
     "stock": 1,
-    "min_stock": 9,
-    "supplier": "Dubai Fashion Hub",
+    "min_stock": 2,
+    "supplier": "Turkiya Import",
     "status": "Kam qolgan",
     "aliases": [
-      "puma ko'ylak",
-      "ofis ko'ylagi",
-      "bej ofis ko'ylak",
-      "puma"
+      "kardigan kostyum",
+      "qora kardigan",
+      "ayollar kardigani",
+      "kardigan"
     ],
-    "image_url": "https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?w=600"
+    "image_url": "https://images.unsplash.com/photo-1585487000160-6ebcfceb0d03?w=600"
   },
   {
     "id": 26,
-    "sku": "KK-1007",
-    "name": "Reebok Yozgi ko'ylak Sariq",
-    "category": "Ko'ylak",
-    "brand": "Reebok",
-    "price": 655000,
-    "cost_price": 374622,
+    "sku": "MS-1026",
+    "name": "Qizlar uchun katakli kardigan",
+    "category": "Kardigan",
+    "brand": "MarkazSavdo",
+    "price": 115000,
+    "cost_price": 75000,
     "sizes": [
-      "XL"
+      "Standart"
     ],
     "colors": [
-      "sariq"
+      "qora-oq",
+      "katakli"
     ],
-    "gender": "Bolalar",
-    "material": "Paxta",
-    "stock": 41,
-    "min_stock": 7,
-    "supplier": "Local Factory UZ",
+    "gender": "Ayol",
+    "material": "Yumshoq trikotaj",
+    "stock": 7,
+    "min_stock": 2,
+    "supplier": "Turkiya Import",
     "status": "Mavjud",
     "aliases": [
-      "reebok ko'ylak",
-      "bolalar ko'ylagi",
-      "sariq ko'ylak",
-      "reebok yozgi"
+      "katakli kardigan",
+      "qizlar kardigani",
+      "katak kardigan"
+    ],
+    "image_url": "https://images.unsplash.com/photo-1585487000160-6ebcfceb0d03?w=600"
+  },
+  {
+    "id": 27,
+    "sku": "MS-1027",
+    "name": "Ayollar sutrang oq tonika",
+    "category": "Ko'ylak",
+    "brand": "MarkazSavdo",
+    "price": 80000,
+    "cost_price": 52000,
+    "sizes": [
+      "Standart"
+    ],
+    "colors": [
+      "sutrang oq",
+      "oq"
+    ],
+    "gender": "Ayol",
+    "material": "Viskoza / Paxta",
+    "stock": 10,
+    "min_stock": 2,
+    "supplier": "Samarqand Tekstil",
+    "status": "Mavjud",
+    "aliases": [
+      "sutrang tonika",
+      "oq tonika",
+      "ayollar tonikasi",
+      "tonika"
     ],
     "image_url": "https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=600"
   },
   {
-    "id": 27,
-    "sku": "KK-1009",
-    "name": "Zara Denim ko'ylak Qora",
+    "id": 28,
+    "sku": "MS-1028",
+    "name": "Ayollar to'q rangli nafis tonika",
     "category": "Ko'ylak",
-    "brand": "Zara",
-    "price": 461000,
-    "cost_price": 303878,
+    "brand": "MarkazSavdo",
+    "price": 150000,
+    "cost_price": 95000,
     "sizes": [
-      "XXL"
+      "Standart"
     ],
     "colors": [
+      "to'q kulrang",
       "qora"
     ],
-    "gender": "Erkak",
-    "material": "Polyester + Paxta",
-    "stock": 75,
-    "min_stock": 4,
-    "supplier": "Local Factory UZ",
-    "status": "Mavjud",
-    "aliases": [
-      "zara ko'ylak",
-      "denim ko'ylak",
-      "qora ko'ylak",
-      "jinsi ko'ylak",
-      "zara black shirt"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?w=600"
-  },
-  {
-    "id": 28,
-    "sku": "KK-1026",
-    "name": "Adidas Parka Moviy",
-    "category": "Kurtka",
-    "brand": "Adidas",
-    "price": 1018000,
-    "cost_price": 725190,
-    "sizes": [
-      "L"
-    ],
-    "colors": [
-      "moviy"
-    ],
     "gender": "Ayol",
-    "material": "Paxta + Polyester",
-    "stock": 7,
-    "min_stock": 3,
-    "supplier": "Istanbul Import",
+    "material": "Sifatli trikotaj",
+    "stock": 8,
+    "min_stock": 2,
+    "supplier": "Samarqand Tekstil",
     "status": "Mavjud",
     "aliases": [
-      "adidas parka",
-      "parka",
-      "moviy kurtka",
-      "adidas kurtka",
-      "kurtka",
-      "куртка адидас"
+      "nafis tonika",
+      "toq tonika",
+      "qishki tonika",
+      "ayollar to'q tonikasi"
     ],
-    "image_url": "https://images.unsplash.com/photo-1544923246-77307dd654cb?w=600"
+    "image_url": "https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=600"
   },
   {
     "id": 29,
-    "sku": "KK-1025",
-    "name": "H&M Qishki kurtka Pushti",
+    "sku": "MS-1029",
+    "name": "Erkaklar ikki tomonlama vitrofka",
     "category": "Kurtka",
-    "brand": "H&M",
-    "price": 625000,
-    "cost_price": 467308,
+    "brand": "MarkazSavdo",
+    "price": 120000,
+    "cost_price": 80000,
     "sizes": [
-      "M"
+      "52",
+      "54",
+      "56"
     ],
     "colors": [
-      "pushti"
+      "yashil",
+      "qora"
     ],
-    "gender": "Uniseks",
-    "material": "Polyester",
-    "stock": 23,
-    "min_stock": 3,
-    "supplier": "Moscow Textile",
+    "gender": "Erkak",
+    "material": "Ikki tomonlama plashovka",
+    "stock": 11,
+    "min_stock": 2,
+    "supplier": "Xitoy Import",
     "status": "Mavjud",
     "aliases": [
-      "h&m kurtka",
-      "qishki kurtka",
-      "pushti kurtka",
-      "h&m",
-      "зимняя куртка"
+      "ikki tomonlama vitrofka",
+      "yashil vitrofka",
+      "dvuxstoronniy vitrofka"
     ],
-    "image_url": "https://images.unsplash.com/photo-1548883354-7622d03aca27?w=600"
+    "image_url": "https://images.unsplash.com/photo-1544441893-675973e31985?w=600"
   },
   {
     "id": 30,
-    "sku": "KK-1027",
-    "name": "H&M Qishki kurtka Sariq",
+    "sku": "MS-1030",
+    "name": "Erkaklar to'q ko'k vitrofka",
     "category": "Kurtka",
-    "brand": "H&M",
-    "price": 2066000,
-    "cost_price": 1170391,
+    "brand": "MarkazSavdo",
+    "price": 140000,
+    "cost_price": 90000,
     "sizes": [
-      "XXL"
+      "52",
+      "54",
+      "56"
     ],
     "colors": [
-      "sariq"
+      "to'q ko'k"
     ],
-    "gender": "Ayol",
-    "material": "Polyester",
-    "stock": 0,
-    "min_stock": 8,
-    "supplier": "Istanbul Textile Co",
-    "status": "Tugagan",
+    "gender": "Erkak",
+    "material": "Plashovka",
+    "stock": 13,
+    "min_stock": 2,
+    "supplier": "Xitoy Import",
+    "status": "Mavjud",
     "aliases": [
-      "h&m sariq kurtka",
-      "sariq kurtka",
-      "ayollar qishki kurtkasi"
+      "to'q ko'k vitrofka",
+      "kurtka toq kok",
+      "shamol otkazmas"
     ],
-    "image_url": "https://images.unsplash.com/photo-1548883354-7622d03aca27?w=600"
+    "image_url": "https://images.unsplash.com/photo-1544441893-675973e31985?w=600"
   },
   {
     "id": 31,
-    "sku": "KK-1028",
-    "name": "Zara Yengil kurtka Bordo",
+    "sku": "MS-1031",
+    "name": "Yosh bolalar Boss vitrofka",
     "category": "Kurtka",
-    "brand": "Zara",
-    "price": 1040000,
-    "cost_price": 716643,
+    "brand": "Boss",
+    "price": 85000,
+    "cost_price": 55000,
     "sizes": [
-      "M"
+      "Standart",
+      "5-8 yosh"
     ],
     "colors": [
-      "bordo"
+      "to'q ko'k"
     ],
-    "gender": "Erkak",
-    "material": "Paxta + Polyester",
-    "stock": 1,
-    "min_stock": 10,
-    "supplier": "Local Factory UZ",
-    "status": "Kam qolgan",
+    "gender": "Bolalar",
+    "material": "Plashovka",
+    "stock": 9,
+    "min_stock": 2,
+    "supplier": "Guangzhou Baby",
+    "status": "Mavjud",
     "aliases": [
-      "zara kurtka",
-      "yengil kurtka",
-      "bordo kurtka",
-      "zara jacket"
+      "boss vitrofka",
+      "bolalar boss",
+      "bolalar vitrofkasi",
+      "boss kurtka"
     ],
-    "image_url": "https://images.unsplash.com/photo-1551028719-00167b16eac5?w=600"
+    "image_url": "https://images.unsplash.com/photo-1544441893-675973e31985?w=600"
   },
   {
     "id": 32,
-    "sku": "KK-1042",
-    "name": "Adidas Yengil palto Moviy",
-    "category": "Palto",
-    "brand": "Adidas",
-    "price": 2041000,
-    "cost_price": 1395038,
+    "sku": "MS-1032",
+    "name": "Bolalar jinsi troyka komplekt",
+    "category": "Kostyum",
+    "brand": "MarkazSavdo",
+    "price": 170000,
+    "cost_price": 110000,
     "sizes": [
-      "XL"
+      "90",
+      "100",
+      "110"
     ],
     "colors": [
-      "moviy"
+      "bej",
+      "ko'k"
     ],
-    "gender": "Erkak",
-    "material": "Jun",
-    "stock": 4,
-    "min_stock": 7,
-    "supplier": "Local Factory UZ",
-    "status": "Kam qolgan",
+    "gender": "Bolalar",
+    "material": "Jinsi + paxta",
+    "stock": 6,
+    "min_stock": 2,
+    "supplier": "Turkiya Baby",
+    "status": "Mavjud",
     "aliases": [
-      "adidas palto",
-      "yengil palto",
-      "moviy palto",
-      "palto",
-      "пальто адидас"
+      "jinsi troyka",
+      "troyka komplekt",
+      "bolalar troykasi",
+      "bolalar jinsi komplekti"
     ],
-    "image_url": "https://images.unsplash.com/photo-1539533113208-f6df8cc8b543?w=600"
+    "image_url": "https://images.unsplash.com/photo-1519725392576-96a84f3eb48c?w=600"
   },
   {
     "id": 33,
-    "sku": "KK-1044",
-    "name": "Artel Style Klassik palto Ko'k",
-    "category": "Palto",
-    "brand": "Artel Style",
-    "price": 3162000,
-    "cost_price": 1782729,
+    "sku": "MS-1033",
+    "name": "Yosh bolalar Polo vitrofka",
+    "category": "Kurtka",
+    "brand": "Polo",
+    "price": 95000,
+    "cost_price": 62000,
     "sizes": [
-      "S"
+      "130",
+      "140",
+      "150",
+      "160",
+      "170"
     ],
     "colors": [
-      "ko'k"
+      "to'q ko'k"
     ],
-    "gender": "Ayol",
-    "material": "Jun",
-    "stock": 5,
-    "min_stock": 4,
-    "supplier": "Local Factory UZ",
+    "gender": "Bolalar",
+    "material": "Plashovka",
+    "stock": 10,
+    "min_stock": 2,
+    "supplier": "Guangzhou Baby",
     "status": "Mavjud",
     "aliases": [
-      "artel palto",
-      "klassik palto",
-      "ayollar paltosi",
-      "ko'k palto"
+      "polo vitrofka bolalar",
+      "bolalar polo kurtka",
+      "polo bolalar"
     ],
-    "image_url": "https://images.unsplash.com/photo-1539533113208-f6df8cc8b543?w=600"
+    "image_url": "https://images.unsplash.com/photo-1544441893-675973e31985?w=600"
   },
   {
     "id": 34,
-    "sku": "KK-1043",
-    "name": "Artel Style Uzun palto Qizil",
-    "category": "Palto",
-    "brand": "Artel Style",
-    "price": 1883000,
-    "cost_price": 1333920,
+    "sku": "MS-1034",
+    "name": "Erkaklar AQSh bayroqli svitir",
+    "category": "Svitir",
+    "brand": "MarkazSavdo",
+    "price": 70000,
+    "cost_price": 45000,
     "sizes": [
-      "XL"
+      "L",
+      "XL",
+      "XXL"
     ],
     "colors": [
-      "qizil"
+      "xaki",
+      "zaytun"
     ],
-    "gender": "Bolalar",
-    "material": "Polyester",
-    "stock": 27,
-    "min_stock": 3,
-    "supplier": "Toshkent Optom",
+    "gender": "Erkak",
+    "material": "Paxta trikotaj",
+    "stock": 8,
+    "min_stock": 2,
+    "supplier": "Toshkent Tekstil",
     "status": "Mavjud",
     "aliases": [
-      "artel style uzun palto",
-      "uzun palto",
-      "qizil palto",
-      "bolalar paltosi"
+      "aqsh bayroqli svitir",
+      "xaki svitir",
+      "bayroqli kofta",
+      "amerika svitir"
     ],
-    "image_url": "https://images.unsplash.com/photo-1539533113208-f6df8cc8b543?w=600"
+    "image_url": "https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?w=600"
   },
   {
     "id": 35,
-    "sku": "KK-1047",
-    "name": "Koton Klassik palto Qora",
-    "category": "Palto",
-    "brand": "Koton",
-    "price": 1397000,
-    "cost_price": 920845,
+    "sku": "MS-1035",
+    "name": "Erkaklar kapyushonli xudi svitir",
+    "category": "Svitir",
+    "brand": "MarkazSavdo",
+    "price": 85000,
+    "cost_price": 55000,
     "sizes": [
-      "L"
-    ],
-    "colors": [
-      "qora"
-    ],
-    "gender": "Bolalar",
-    "material": "Polyester",
-    "stock": 49,
-    "min_stock": 10,
-    "supplier": "Moscow Textile",
-    "status": "Mavjud",
-    "aliases": [
-      "koton palto",
-      "qora palto",
-      "klassik palto qora",
-      "пальто котон"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1539533113208-f6df8cc8b543?w=600"
-  },
-  {
-    "id": 36,
-    "sku": "KK-1046",
-    "name": "Local Brand UZ Yengil palto Oq",
-    "category": "Palto",
-    "brand": "Local Brand UZ",
-    "price": 2080000,
-    "cost_price": 1328139,
-    "sizes": [
-      "M"
-    ],
-    "colors": [
-      "oq"
-    ],
-    "gender": "Uniseks",
-    "material": "Cashmere blend",
-    "stock": 76,
-    "min_stock": 3,
-    "supplier": "Moscow Textile",
-    "status": "Mavjud",
-    "aliases": [
-      "oq palto",
-      "kashmir palto",
-      "yengil palto oq",
-      "cashmere palto"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1539533113208-f6df8cc8b543?w=600"
-  },
-  {
-    "id": 37,
-    "sku": "KK-1049",
-    "name": "Pull&Bear Yengil palto Yashil",
-    "category": "Palto",
-    "brand": "Pull&Bear",
-    "price": 1891000,
-    "cost_price": 1313742,
-    "sizes": [
-      "XL"
-    ],
-    "colors": [
-      "yashil"
-    ],
-    "gender": "Erkak",
-    "material": "Polyester",
-    "stock": 3,
-    "min_stock": 7,
-    "supplier": "Dubai Fashion Hub",
-    "status": "Kam qolgan",
-    "aliases": [
-      "pull&bear palto",
-      "yashil palto",
-      "erkaklar paltosi"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1539533113208-f6df8cc8b543?w=600"
-  },
-  {
-    "id": 38,
-    "sku": "KK-1045",
-    "name": "Puma Uzun palto Kulrang",
-    "category": "Palto",
-    "brand": "Puma",
-    "price": 2535000,
-    "cost_price": 1431844,
-    "sizes": [
-      "S"
+      "L",
+      "XL",
+      "XXL"
     ],
     "colors": [
       "kulrang"
     ],
-    "gender": "Uniseks",
-    "material": "Jun",
-    "stock": 6,
-    "min_stock": 9,
-    "supplier": "Istanbul Import",
-    "status": "Kam qolgan",
+    "gender": "Erkak",
+    "material": "Qalin trikotaj",
+    "stock": 12,
+    "min_stock": 2,
+    "supplier": "Toshkent Tekstil",
+    "status": "Mavjud",
     "aliases": [
-      "puma palto",
-      "uzun palto kulrang",
-      "puma coat"
+      "kapyushonli xudi",
+      "xudi svitir",
+      "kulrang xudi",
+      "erkaklar xudisi"
     ],
-    "image_url": "https://images.unsplash.com/photo-1539533113208-f6df8cc8b543?w=600"
+    "image_url": "https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?w=600"
+  },
+  {
+    "id": 36,
+    "sku": "MS-1036",
+    "name": "Erkaklar kulrang sportivka kostyum",
+    "category": "Kostyum",
+    "brand": "MarkazSavdo",
+    "price": 210000,
+    "cost_price": 140000,
+    "sizes": [
+      "L",
+      "XL",
+      "XXL"
+    ],
+    "colors": [
+      "kulrang"
+    ],
+    "gender": "Erkak",
+    "material": "Sifatli ikki ipli trikotaj",
+    "stock": 7,
+    "min_stock": 2,
+    "supplier": "Turkiya Import",
+    "status": "Mavjud",
+    "aliases": [
+      "kulrang sportivka",
+      "sportivka to'plam",
+      "masterka shim",
+      "sport kostyumi"
+    ],
+    "image_url": "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=600"
+  },
+  {
+    "id": 37,
+    "sku": "MS-1037",
+    "name": "Ayollar dvoyka ko'ylak-yubka komplekt",
+    "category": "Ko'ylak",
+    "brand": "MarkazSavdo",
+    "price": 220000,
+    "cost_price": 145000,
+    "sizes": [
+      "48",
+      "50",
+      "52",
+      "54"
+    ],
+    "colors": [
+      "bordo",
+      "qora",
+      "kulrang"
+    ],
+    "gender": "Ayol",
+    "material": "Trikotaj va jakkard",
+    "stock": 8,
+    "min_stock": 2,
+    "supplier": "Samarqand Tekstil",
+    "status": "Mavjud",
+    "aliases": [
+      "dvoyka koylak yubka",
+      "koylak yubka komplekt",
+      "ayollar dvoykasi",
+      "ayollar komplekt"
+    ],
+    "image_url": "https://images.unsplash.com/photo-1585487000160-6ebcfceb0d03?w=600"
+  },
+  {
+    "id": 38,
+    "sku": "MS-1038",
+    "name": "Qiz bolalar uchun pijama komplekt",
+    "category": "Pijama",
+    "brand": "MarkazSavdo",
+    "price": 25000,
+    "cost_price": 15000,
+    "sizes": [
+      "Standart",
+      "4-7 yosh"
+    ],
+    "colors": [
+      "siyohrang",
+      "sariq",
+      "mentol"
+    ],
+    "gender": "Bolalar",
+    "material": "Paxta 100%",
+    "stock": 15,
+    "min_stock": 3,
+    "supplier": "Namangan Tekstil",
+    "status": "Mavjud",
+    "aliases": [
+      "qizlar pijamasi",
+      "pijama komplekt",
+      "uy pijamasi",
+      "bolalar pijamasi"
+    ],
+    "image_url": "https://images.unsplash.com/photo-1519725392576-96a84f3eb48c?w=600"
   },
   {
     "id": 39,
-    "sku": "KK-1048",
-    "name": "Zara Yengil palto Bej",
-    "category": "Palto",
-    "brand": "Zara",
-    "price": 2062000,
-    "cost_price": 1184954,
+    "sku": "MS-1039",
+    "name": "O'g'il bolalar uchun pijama komplekt",
+    "category": "Pijama",
+    "brand": "MarkazSavdo",
+    "price": 30000,
+    "cost_price": 18000,
     "sizes": [
-      "XL"
+      "Standart",
+      "4-7 yosh"
     ],
     "colors": [
-      "bej"
+      "havorang",
+      "qora",
+      "yashil"
     ],
     "gender": "Bolalar",
-    "material": "Cashmere blend",
-    "stock": 46,
-    "min_stock": 4,
-    "supplier": "Istanbul Import",
+    "material": "Paxta 100%",
+    "stock": 14,
+    "min_stock": 3,
+    "supplier": "Namangan Tekstil",
     "status": "Mavjud",
     "aliases": [
-      "zara palto",
-      "bej palto",
-      "zara yengil palto",
-      "пальто зара"
+      "ogil bolalar pijamasi",
+      "ogil bola pijama",
+      "bolalar uy kiyimi"
     ],
-    "image_url": "https://images.unsplash.com/photo-1539533113208-f6df8cc8b543?w=600"
+    "image_url": "https://images.unsplash.com/photo-1519725392576-96a84f3eb48c?w=600"
   },
   {
     "id": 40,
-    "sku": "KK-1069",
-    "name": "Adidas Ko'rinmas paypoq Bordo",
-    "category": "Paypoq",
-    "brand": "Adidas",
-    "price": 102000,
-    "cost_price": 57461,
+    "sku": "MS-1040",
+    "name": "O'g'il bolalar Xitoy krossovka",
+    "category": "Oyoq kiyim",
+    "brand": "MarkazSavdo",
+    "price": 75000,
+    "cost_price": 48000,
     "sizes": [
-      "43-46"
+      "26",
+      "27",
+      "28",
+      "29",
+      "30"
     ],
     "colors": [
-      "bordo"
+      "qora-oq"
     ],
     "gender": "Bolalar",
-    "material": "Synthetics",
-    "stock": 68,
-    "min_stock": 5,
-    "supplier": "Istanbul Import",
+    "material": "To'qima mato va rezina",
+    "stock": 12,
+    "min_stock": 2,
+    "supplier": "Guangzhou Shoes",
     "status": "Mavjud",
     "aliases": [
-      "adidas paypoq",
-      "ko'rinmas paypoq",
-      "bordo paypoq",
-      "paypoq",
-      "носки"
+      "ogil bola krossovka",
+      "xitoy krossovka",
+      "bolalar krossovkasi",
+      "qora oq krossovka"
     ],
-    "image_url": "https://images.unsplash.com/photo-1586350977771-b3b0abd50c82?w=600"
+    "image_url": "https://images.unsplash.com/photo-1549298916-b41d501d3772?w=600"
   },
   {
     "id": 41,
-    "sku": "KK-1065",
-    "name": "Adidas Oddiy paypoq Bordo",
-    "category": "Paypoq",
-    "brand": "Adidas",
-    "price": 49000,
-    "cost_price": 32435,
+    "sku": "MS-1041",
+    "name": "Qiz bolalar Xitoy krossovka",
+    "category": "Oyoq kiyim",
+    "brand": "MarkazSavdo",
+    "price": 85000,
+    "cost_price": 55000,
     "sizes": [
-      "39-42"
+      "26",
+      "27",
+      "28",
+      "29",
+      "30",
+      "31"
     ],
     "colors": [
-      "bordo"
-    ],
-    "gender": "Ayol",
-    "material": "Jun",
-    "stock": 6,
-    "min_stock": 6,
-    "supplier": "Toshkent Optom",
-    "status": "Kam qolgan",
-    "aliases": [
-      "oddiy paypoq",
-      "ayollar paypog'i",
-      "adidas paypoq ayollar"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1586350977771-b3b0abd50c82?w=600"
-  },
-  {
-    "id": 42,
-    "sku": "KK-1071",
-    "name": "Bershka Ko'rinmas paypoq Yashil",
-    "category": "Paypoq",
-    "brand": "Bershka",
-    "price": 108000,
-    "cost_price": 66363,
-    "sizes": [
-      "39-42"
-    ],
-    "colors": [
-      "yashil"
+      "oq-binafsharang",
+      "pushti"
     ],
     "gender": "Bolalar",
-    "material": "Jun",
-    "stock": 23,
-    "min_stock": 6,
-    "supplier": "Guangzhou Trade",
+    "material": "To'qima mato va yengil taglik",
+    "stock": 10,
+    "min_stock": 2,
+    "supplier": "Guangzhou Shoes",
     "status": "Mavjud",
     "aliases": [
-      "bershka paypoq",
-      "yashil paypoq",
-      "bershka socks"
+      "qizlar krossovkasi",
+      "oq binafsha krossovka",
+      "pushti krossovka",
+      "bolalar krossovkalari"
     ],
-    "image_url": "https://images.unsplash.com/photo-1586350977771-b3b0abd50c82?w=600"
-  },
-  {
-    "id": 43,
-    "sku": "KK-1066",
-    "name": "Defacto Sport paypoq Jigarrang",
-    "category": "Paypoq",
-    "brand": "Defacto",
-    "price": 69000,
-    "cost_price": 50138,
-    "sizes": [
-      "43-46"
-    ],
-    "colors": [
-      "jigarrang"
-    ],
-    "gender": "Uniseks",
-    "material": "Jun",
-    "stock": 21,
-    "min_stock": 5,
-    "supplier": "Dubai Fashion Hub",
-    "status": "Mavjud",
-    "aliases": [
-      "defacto paypoq",
-      "sport paypoq",
-      "jigarrang paypoq"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1586350977771-b3b0abd50c82?w=600"
-  },
-  {
-    "id": 44,
-    "sku": "KK-1068",
-    "name": "Defacto Sport paypoq Yashil",
-    "category": "Paypoq",
-    "brand": "Defacto",
-    "price": 100000,
-    "cost_price": 70711,
-    "sizes": [
-      "43-46"
-    ],
-    "colors": [
-      "yashil"
-    ],
-    "gender": "Uniseks",
-    "material": "Synthetics",
-    "stock": 55,
-    "min_stock": 6,
-    "supplier": "Local Factory UZ",
-    "status": "Mavjud",
-    "aliases": [
-      "yashil sport paypoq",
-      "defacto yashil paypoq"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1586350977771-b3b0abd50c82?w=600"
-  },
-  {
-    "id": 45,
-    "sku": "KK-1070",
-    "name": "UzTex Qishki paypoq Bej",
-    "category": "Paypoq",
-    "brand": "UzTex",
-    "price": 45000,
-    "cost_price": 29903,
-    "sizes": [
-      "39-42"
-    ],
-    "colors": [
-      "bej"
-    ],
-    "gender": "Erkak",
-    "material": "Synthetics",
-    "stock": 4,
-    "min_stock": 5,
-    "supplier": "Guangzhou Trade",
-    "status": "Kam qolgan",
-    "aliases": [
-      "uztex paypoq",
-      "qishki paypoq",
-      "issiq paypoq",
-      "uztex"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1586350977771-b3b0abd50c82?w=600"
-  },
-  {
-    "id": 46,
-    "sku": "KK-1067",
-    "name": "UzTex Sport paypoq Qizil",
-    "category": "Paypoq",
-    "brand": "UzTex",
-    "price": 127000,
-    "cost_price": 79884,
-    "sizes": [
-      "39-42"
-    ],
-    "colors": [
-      "qizil"
-    ],
-    "gender": "Bolalar",
-    "material": "Jun",
-    "stock": 0,
-    "min_stock": 7,
-    "supplier": "Moscow Textile",
-    "status": "Tugagan",
-    "aliases": [
-      "uztex sport paypoq",
-      "qizil paypoq"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1586350977771-b3b0abd50c82?w=600"
-  },
-  {
-    "id": 47,
-    "sku": "KK-1017",
-    "name": "Artel Style Cargo shim Oq",
-    "category": "Shim",
-    "brand": "Artel Style",
-    "price": 401000,
-    "cost_price": 267194,
-    "sizes": [
-      "36"
-    ],
-    "colors": [
-      "oq"
-    ],
-    "gender": "Erkak",
-    "material": "Polyester",
-    "stock": 31,
-    "min_stock": 6,
-    "supplier": "Local Factory UZ",
-    "status": "Mavjud",
-    "aliases": [
-      "cargo shim",
-      "oq cargo shim",
-      "artel shim",
-      "shim",
-      "bryuk",
-      "брюки"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?w=600"
-  },
-  {
-    "id": 48,
-    "sku": "KK-1013",
-    "name": "Defacto Chino shim Bej",
-    "category": "Shim",
-    "brand": "Defacto",
-    "price": 688000,
-    "cost_price": 488512,
-    "sizes": [
-      "36"
-    ],
-    "colors": [
-      "bej"
-    ],
-    "gender": "Erkak",
-    "material": "Denim",
-    "stock": 0,
-    "min_stock": 6,
-    "supplier": "Toshkent Optom",
-    "status": "Tugagan",
-    "aliases": [
-      "chino shim",
-      "defacto chino shim",
-      "bej shim",
-      "chino"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?w=600"
-  },
-  {
-    "id": 49,
-    "sku": "KK-1016",
-    "name": "LC Waikiki Klassik shim Yashil",
-    "category": "Shim",
-    "brand": "LC Waikiki",
-    "price": 397000,
-    "cost_price": 276200,
-    "sizes": [
-      "38"
-    ],
-    "colors": [
-      "yashil"
-    ],
-    "gender": "Erkak",
-    "material": "Denim",
-    "stock": 12,
-    "min_stock": 9,
-    "supplier": "Istanbul Import",
-    "status": "Mavjud",
-    "aliases": [
-      "lc waikiki shim",
-      "klassik shim",
-      "yashil shim",
-      "lc waikiki klassik"
-    ],
-    "image_url": "https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?w=600"
+    "image_url": "https://images.unsplash.com/photo-1549298916-b41d501d3772?w=600"
   }
 ]

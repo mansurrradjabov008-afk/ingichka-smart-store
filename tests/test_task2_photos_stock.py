@@ -34,6 +34,11 @@ class TestTask2PhotosAndStock(unittest.TestCase):
     def setUpClass(cls):
         init_db()
 
+    @classmethod
+    def tearDownClass(cls):
+        from data.build_real_inventory import build_inventory
+        build_inventory()
+
     def setUp(self):
         # Backup waitlist.json if exists
         self.waitlist_backup = None

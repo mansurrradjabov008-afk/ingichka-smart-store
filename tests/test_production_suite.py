@@ -28,29 +28,29 @@ def test_production_flows():
 
     # 1. TEST PRODUCT MATCHING
     print("\n--- 1. TEST PRODUCT MATCHING ---")
-    p1 = OrderMatcher.match_product("Adidas printli futbolka ko'k olaman")
+    p1 = OrderMatcher.match_product("Poplin ayollar ko'ylak komplekt olaman")
     assert p1 is not None and p1["id"] == 1, f"Expected ID 1, got {p1}"
-    print(f"PASS: 'Adidas Printli futbolka' -> #{p1['id']} {p1['name']} ({p1['sale_price']:,.0f} so'm)")
+    print(f"PASS: 'Poplin ayollar ko'ylak' -> #{p1['id']} {p1['name']} ({p1['sale_price']:,.0f} so'm)")
 
-    p18 = OrderMatcher.match_product("Nike yozgi kepka bej rangidan bering")
+    p18 = OrderMatcher.match_product("Erkaklar klassik qora vitrofka berishingizni so'rayman")
     assert p18 is not None and p18["id"] == 18, f"Expected ID 18, got {p18}"
-    print(f"PASS: 'Nike kepka' -> #{p18['id']} {p18['name']} ({p18['sale_price']:,.0f} so'm)")
+    print(f"PASS: 'Erkaklar klassik qora vitrofka' -> #{p18['id']} {p18['name']} ({p18['sale_price']:,.0f} so'm)")
 
-    p12 = OrderMatcher.match_product("KK-1022")
+    p12 = OrderMatcher.match_product("MS-1012")
     assert p12 is not None and p12["id"] == 12, f"Expected ID 12, got {p12}"
-    print(f"PASS: 'KK-1022' -> #{p12['id']} {p12['name']} ({p12['sale_price']:,.0f} so'm)")
+    print(f"PASS: 'MS-1012' -> #{p12['id']} {p12['name']} ({p12['sale_price']:,.0f} so'm)")
 
-    p45 = OrderMatcher.match_product("UzTex qishki paypoq bej")
-    assert p45 is not None and p45["id"] == 45, f"Expected ID 45, got {p45}"
-    print(f"PASS: 'UzTex paypoq' -> #{p45['id']} {p45['name']} ({p45['sale_price']:,.0f} so'm)")
+    p20 = OrderMatcher.match_product("O'zbekiston bolalar futbolkasi")
+    assert p20 is not None and p20["id"] == 20, f"Expected ID 20, got {p20}"
+    print(f"PASS: 'O'zbekiston bolalar futbolkasi' -> #{p20['id']} {p20['name']} ({p20['sale_price']:,.0f} so'm)")
 
     # 2. RULE 1: MIJOZ SOTIB OLISH NIYATINI BILDIRMAGUNCHA MANZIL VA TEL SO'RAMASLIK
     print("\n--- 2. RULE 1: PURCHASE INTENT GUARD ---")
-    inquiry_no_intent = "Adidas futbolka qancha turadi?"
+    inquiry_no_intent = "Poplin ko'ylak qancha turadi?"
     details_no_intent = OrderMatcher.extract_order_details(inquiry_no_intent, has_pending_order=False)
     assert details_no_intent is None, "Should NOT extract order without purchase intent!"
 
-    intent_text = "Adidas printli futbolkadan olaman, manzil: Navoiy ko'chasi 15, tel: +998901234567"
+    intent_text = "Poplin ayollar ko'ylagidan olaman, manzil: Navoiy ko'chasi 15, tel: +998901234567"
     details_with_intent = OrderMatcher.extract_order_details(intent_text, has_pending_order=False)
     assert details_with_intent is not None
     assert details_with_intent["phone"] == "+998901234567"
@@ -58,13 +58,13 @@ def test_production_flows():
 
     # 3. RULE 3: QOLDIQ 2 YOKI KAMROQ BO'LSA 'OXIRGI N TA QOLDI'
     print("\n--- 3. RULE 3: LOW STOCK 'OXIRGI N TA QOLDI' LABEL ---")
-    p9 = DatabaseManager.get_product_by_id(9) # LC Waikiki Briefs (stock 2)
+    p9 = DatabaseManager.get_product_by_id(9) # Bolalar qora triko shimi (stock 2)
     assert p9["stock_quantity"] == 2
     post9 = OrderMatcher.format_channel_post(p9)
     assert "oxirgi 2 ta qoldi" in post9
     print(f"PASS: Product #{p9['id']} stock {p9['stock_quantity']} formatted with: 'oxirgi 2 ta qoldi'")
 
-    p25 = DatabaseManager.get_product_by_id(25) # Puma Ofis ko'ylak (stock 1)
+    p25 = DatabaseManager.get_product_by_id(25) # Ayollar qora kardigan kostyum (stock 1)
     assert p25["stock_quantity"] == 1
     post25 = OrderMatcher.format_channel_post(p25)
     assert "oxirgi 1 ta qoldi" in post25
@@ -84,15 +84,15 @@ def test_production_flows():
 
     # 5. RULE 5: JAMI SUMMANI KOD HISOBLAYDI
     print("\n--- 5. RULE 5: CODE-CALCULATED TOTAL SUM ---")
-    quote1 = OrderMatcher.calculate_quote("2 ta Adidas futbolka qancha bo'ladi?")
+    quote1 = OrderMatcher.calculate_quote("2 ta Poplin ayollar ko'ylak qancha bo'ladi?")
     assert quote1 is not None
-    assert "400,000" in quote1 or "400 000" in quote1
-    print(f"PASS: 2 Adidas futbolka (2 * 200,000) calculated by code: {quote1}")
+    assert "140,000" in quote1 or "140 000" in quote1
+    print(f"PASS: 2 Poplin ko'ylak (2 * 70,000) calculated by code: {quote1}")
 
-    quote2 = OrderMatcher.calculate_quote("3 ta Nike polo futbolka narxi qancha?")
+    quote2 = OrderMatcher.calculate_quote("3 ta Polo erkaklar svitir narxi qancha?")
     assert quote2 is not None
-    assert "522,000" in quote2 or "522 000" in quote2
-    print(f"PASS: 3 Nike polo (3 * 174,000) calculated by code: {quote2}")
+    assert "225,000" in quote2 or "225 000" in quote2
+    print(f"PASS: 3 Polo svitir (3 * 75,000) calculated by code: {quote2}")
 
     # 6. RULE 6: ASSALOMU ALAYKUM DEB MUROJAAT QILISH, JINSINI TAXMIN QILMASLIK
     print("\n--- 6. RULE 6: NEUTRAL GREETING & NO GENDER GUESSING ---")
@@ -108,9 +108,9 @@ def test_production_flows():
 
     # 7. RULE 7: MAVJAV BO'LMAGAN O'LCHAM UCHUN 'BIZDA FAQAT X, Y, Z BOR' DEYISH
     print("\n--- 7. RULE 7: MISSING SIZE HANDLING ---")
-    size_inq = OrderMatcher.check_size_inquiry("Adidas futbolkadan M razmer bormi?")
+    size_inq = OrderMatcher.check_size_inquiry("Poplin ayollar ko'ylakdan M razmer bormi?")
     assert size_inq is not None
-    assert "bizda faqat XXL bor" in size_inq
+    assert "bizda faqat 48 bor" in size_inq
     print(f"PASS: Missing size request handled: {size_inq}")
 
     # 8. STORE SETTINGS: EMPTY CONFIG -> 'Buni egasidan so'rab aytaman' + ADMIN ALERT
@@ -194,24 +194,24 @@ def test_production_flows():
 
     # 11. UZBEK WORD NUMBERS & QUANTITY EXTRACTION SUITE
     print("\n--- 11. UZBEK WORD NUMBERS & QUANTITY EXTRACTION ---")
-    quote_ikki = OrderMatcher.calculate_quote("ikkita Adidas futbolka qancha bo'ladi?")
-    assert quote_ikki is not None and "400,000" in quote_ikki
-    print(f"PASS: 'ikkita Adidas futbolka' -> {quote_ikki}")
+    quote_ikki = OrderMatcher.calculate_quote("ikkita Poplin ayollar ko'ylak qancha bo'ladi?")
+    assert quote_ikki is not None and "140,000" in quote_ikki
+    print(f"PASS: 'ikkita Poplin ko'ylak' -> {quote_ikki}")
 
-    quote_bir = OrderMatcher.calculate_quote("bitta Nike polo futbolka qancha?")
-    assert quote_bir is not None and "174,000" in quote_bir
-    print(f"PASS: 'bitta Nike polo' -> {quote_bir}")
+    quote_bir = OrderMatcher.calculate_quote("bitta Polo erkaklar svitir qancha?")
+    assert quote_bir is not None and "75,000" in quote_bir
+    print(f"PASS: 'bitta Polo svitir' -> {quote_bir}")
 
-    quote_uch = OrderMatcher.calculate_quote("uchta Nike polo futbolka narxi qancha?")
-    assert quote_uch is not None and "522,000" in quote_uch
-    print(f"PASS: 'uchta Nike polo' -> {quote_uch}")
+    quote_uch = OrderMatcher.calculate_quote("uchta Polo erkaklar svitir narxi qancha?")
+    assert quote_uch is not None and "225,000" in quote_uch
+    print(f"PASS: 'uchta Polo svitir' -> {quote_uch}")
 
-    order_two = OrderMatcher.extract_order_details("ikkita Adidas futbolka olaman, manzil: Navoiy ko'chasi 15, tel: +998901234567")
+    order_two = OrderMatcher.extract_order_details("ikkita Poplin ayollar ko'ylak olaman, manzil: Navoiy ko'chasi 15, tel: +998901234567")
     assert order_two is not None
     assert order_two["quantity"] == 2
     assert order_two["address"] == "Navoiy ko'chasi 15"
     assert order_two["phone"] == "+998901234567"
-    print(f"PASS: 'ikkita futbolka' parsed with quantity=2 and clean address='{order_two['address']}'")
+    print(f"PASS: 'ikkita ko'ylak' parsed with quantity=2 and clean address='{order_two['address']}'")
 
     # 12. SQLITE WAL CONCURRENCY & INDEXES HEALTH SUITE
     print("\n--- 12. SQLITE WAL CONCURRENCY & INDEXES HEALTH ---")

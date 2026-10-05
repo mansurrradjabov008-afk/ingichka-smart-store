@@ -101,35 +101,35 @@ def run_ultimate_verification():
         print(f"  XATO Render /diag: {e}")
         sys.exit(1)
 
-    # 4. 49 TA REAL MAHSULOTNING BAZADA VA QIDIRUVDA TO'LIQLIGI
-    print("\n[4/6] 49 TA MAHSULOTNING TO'LIQ AUDITI...")
+    # 4. 41 TA REAL MAHSULOTNING BAZADA VA QIDIRUVDA TO'LIQLIGI
+    print("\n[4/6] 41 TA REAL MAHSULOTNING TO'LIQ AUDITI...")
     init_db()
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM products")
         total_prods = cursor.fetchone()[0]
-        assert total_prods == 49, f"Bazada 49 ta bo'lishi kerak, ammo {total_prods} ta!"
+        assert total_prods == 41, f"Bazada 41 ta bo'lishi kerak, ammo {total_prods} ta!"
 
         cursor.execute("SELECT category, COUNT(*) FROM products GROUP BY category ORDER BY category")
         cat_counts = cursor.fetchall()
-        print(f"  OK: Jami 49 ta mahsulot 9 ta toifaga bo'lingan:")
+        print(f"  OK: Jami 41 ta mahsulot {len(cat_counts)} ta toifaga bo'lingan:")
         for cat, cnt in cat_counts:
             print(f"      - {cat}: {cnt} ta mahsulot")
 
         cursor.execute("SELECT COUNT(*) FROM products WHERE stock_quantity = 0")
         out_of_stock = cursor.fetchone()[0]
-        assert out_of_stock == 5, f"5 ta tugagan tovar bo'lishi kerak, lekin {out_of_stock}"
+        assert out_of_stock == 1, f"1 ta tugagan tovar bo'lishi kerak, lekin {out_of_stock}"
         print(f"  OK: Omborda tugagan tovarlar soni: {out_of_stock} ta (to'g'ri qayd etilgan)")
 
         cursor.execute("SELECT COUNT(*) FROM products WHERE stock_quantity > 0 AND stock_quantity <= 2")
         low_stock = cursor.fetchone()[0]
-        assert low_stock == 3, f"3 ta kam qolgan tovar bo'lishi kerak, lekin {low_stock}"
+        assert low_stock == 2, f"2 ta kam qolgan tovar bo'lishi kerak, lekin {low_stock}"
         print(f"  OK: Kam qolgan tovarlar (oxirgi 1-2 dona): {low_stock} ta (to'g'ri qayd etilgan)")
 
-    # 5. BARCHA 49 TA MAHSULOTNING SKU ARTIKULLARI BO'YICHA 100% QIDIRUV AUDITI
-    print("\n[5/6] BARCHA 49 TA MAHSULOTNING ARTIKUL (SKU) BO'YICHA QIDIRUV SINOVI...")
+    # 5. BARCHA 41 TA MAHSULOTNING SKU ARTIKULLARI BO'YICHA 100% QIDIRUV AUDITI
+    print("\n[5/6] BARCHA 41 TA MAHSULOTNING ARTIKUL (SKU) BO'YICHA QIDIRUV SINOVI...")
     all_prods = DatabaseManager.get_products(in_stock_only=False)
-    assert len(all_prods) == 49
+    assert len(all_prods) == 41
     matched_count = 0
     for p in all_prods:
         sku = p.get("sku")

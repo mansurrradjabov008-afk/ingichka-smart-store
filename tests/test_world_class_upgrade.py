@@ -36,8 +36,7 @@ class TestWorldClassUpgrade(unittest.TestCase):
         init_db()
         ReviewManager.init_reviews_table()
         prods = DatabaseManager.get_products()
-        assert len(prods) > 0, "Database must have products for testing"
-        cls.sample_product = prods[0]
+        cls.sample_product = next((p for p in prods if p.get("stock_quantity", 0) >= 5), prods[0])
         cls.test_user_id = 888999111
 
     def setUp(self):

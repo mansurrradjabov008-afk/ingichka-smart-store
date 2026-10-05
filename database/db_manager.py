@@ -115,23 +115,27 @@ def init_db():
     # 6. Auto-seed catalog from products.json if table has old/incomplete catalog (Self-Healing DB)
     cursor.execute("SELECT COUNT(*) FROM products;")
     cnt = cursor.fetchone()[0]
-    if cnt < 40:
+    cursor.execute("SELECT sku FROM products WHERE id = 1;")
+    first_sku_row = cursor.fetchone()
+    first_sku = first_sku_row[0] if first_sku_row else ""
+
+    if cnt == 0 or first_sku != "MS-1001":
         import json
         from pathlib import Path
         products_json_path = Path(__file__).resolve().parent.parent / "products.json"
         if products_json_path.exists():
             try:
-                if cnt > 0:
-                    cursor.execute("DELETE FROM products;")
+                cursor.execute("DELETE FROM products;")
                 with open(products_json_path, "r", encoding="utf-8") as f:
                     prods = json.load(f)
                 for p in prods:
                     cursor.execute("""
                         INSERT INTO products (
-                            name, category, size, color, cost_price, sale_price, stock_quantity,
-                            description, sku, brand, gender, material, min_stock, supplier
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            id, name, category, size, color, cost_price, sale_price, stock_quantity,
+                            description, is_active, sku, brand, gender, material, min_stock, supplier
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
                     """, (
+                        p["id"],
                         p["name"],
                         p.get("category", "Boshqa"),
                         ", ".join(p.get("sizes", [])) if isinstance(p.get("sizes"), list) else str(p.get("sizes", "")),

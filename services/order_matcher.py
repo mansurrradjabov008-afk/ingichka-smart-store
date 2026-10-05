@@ -51,10 +51,11 @@ class OrderMatcher:
 
         t_low = text.lower()
 
-        # 1a. SKU orqali aniqlash (KK-1002, KK 1002, KK-1025)
-        sku_match = re.search(r"\b(?:kk[-_\s]?)(\d{4})\b", t_low)
+        # 1a. SKU orqali aniqlash (MS-1001, KK-1002, MS 1012, etc.)
+        sku_match = re.search(r"\b(kk|ms)[-_\s]?(\d{4})\b", t_low)
         if sku_match:
-            sku_target = f"KK-{sku_match.group(1)}"
+            prefix = sku_match.group(1).upper()
+            sku_target = f"{prefix}-{sku_match.group(2)}"
             all_p = DatabaseManager.get_products(in_stock_only=False)
             for p in all_p:
                 if p.get("sku") == sku_target or sku_target.lower() in (p.get("description") or "").lower():
@@ -87,8 +88,10 @@ class OrderMatcher:
             p_desc = (p.get("description") or "").lower()
 
             score = 0
-            if p_name and p_name in t_low:
+            if p_name and (p_name in t_low or (len(t_low) >= 5 and t_low in p_name)):
                 score += 60
+            if p_desc and len(t_low) >= 5 and t_low in p_desc:
+                score += 40
             if p_brand and p_brand in t_low:
                 score += 30
             if p_cat and p_cat in t_low:
@@ -97,7 +100,7 @@ class OrderMatcher:
                 score += 15
             for w in t_low.split():
                 if len(w) >= 4 and (w in p_name or w in p_desc):
-                    score += 8
+                    score += 10
 
             if p.get("stock_quantity", 0) > 0 and score > 0:
                 score += 5

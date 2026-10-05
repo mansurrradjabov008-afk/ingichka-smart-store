@@ -63,6 +63,11 @@ class TestTask3OrderStateMachine(unittest.TestCase):
     def setUpClass(cls):
         init_db()
 
+    @classmethod
+    def tearDownClass(cls):
+        from data.build_real_inventory import build_inventory
+        build_inventory()
+
     def setUp(self):
         # Backup order_states.json and orders.json if they exist
         self.states_backup = None
@@ -121,12 +126,17 @@ class TestTask3OrderStateMachine(unittest.TestCase):
         # Maydonlarni bosqichma-bosqich yuborish
         # Agar tovarning o'lchami so'ralsa:
         curr_state = flow["state"]
+        avail_sizes = OrderFlowService.get_available_sizes(p1)
+        avail_colors = OrderFlowService.get_available_colors(p1)
+        valid_size = avail_sizes[0] if avail_sizes else "48"
+        valid_color = avail_colors[0] if avail_colors else "sariq"
+
         if curr_state == STATE_SIZE:
-            res = OrderFlowService.process_step(chat_id, "XXL")
+            res = OrderFlowService.process_step(chat_id, valid_size)
             curr_state = res["state"]
 
         if curr_state == STATE_COLOR:
-            res = OrderFlowService.process_step(chat_id, "ko'k")
+            res = OrderFlowService.process_step(chat_id, valid_color)
             curr_state = res["state"]
 
         if curr_state == STATE_QUANTITY:
@@ -202,8 +212,8 @@ class TestTask3OrderStateMachine(unittest.TestCase):
                 "product_id": 1,
                 "product_name": p1["name"],
                 "unit_price": p1["sale_price"],
-                "size": "XXL",
-                "color": "ko'k",
+                "size": OrderFlowService.get_available_sizes(p1)[0] if OrderFlowService.get_available_sizes(p1) else "48",
+                "color": OrderFlowService.get_available_colors(p1)[0] if OrderFlowService.get_available_colors(p1) else "sariq",
                 "quantity": 1,
                 "name": "Alisher"
             },
@@ -262,11 +272,12 @@ class TestTask3OrderStateMachine(unittest.TestCase):
         self.assertIn("mavjud emas", res_wrong["reply"])
         self.assertIn("Mavjud o'lchamlar", res_wrong["reply"])
 
-        # 2. To'g'ri razmer kiritish ("XXL")
-        res_correct = OrderFlowService.process_step(chat_id, "XXL")
+        # 2. To'g'ri razmer kiritish
+        valid_size = avail_sizes[0]
+        res_correct = OrderFlowService.process_step(chat_id, valid_size)
         self.assertNotEqual(res_correct["state"], STATE_SIZE)
         sess_updated = OrderFlowService.get_session(chat_id)
-        self.assertEqual(sess_updated["data"]["size"], "XXL")
+        self.assertEqual(sess_updated["data"]["size"], valid_size)
 
         print("✅ TEST 3 PASSED: Wrong size rejected politely with available options, valid size accepted.")
 
@@ -478,8 +489,8 @@ class TestTask3OrderStateMachine(unittest.TestCase):
                 "product_id": 2,
                 "product_name": p2["name"],
                 "unit_price": p2["sale_price"],
-                "size": "L",
-                "color": "ko'k",
+                "size": OrderFlowService.get_available_sizes(p2)[0] if OrderFlowService.get_available_sizes(p2) else "Standart",
+                "color": OrderFlowService.get_available_colors(p2)[0] if OrderFlowService.get_available_colors(p2) else "jigarrang",
                 "quantity": order_qty,
                 "name": "Ziyodulla",
                 "phone": "+998901234567",
