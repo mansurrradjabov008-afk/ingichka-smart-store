@@ -24,6 +24,7 @@ import re
 import json
 import logging
 import threading
+import requests
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List, Tuple, Callable
@@ -260,7 +261,15 @@ class HandoffService:
 
     @classmethod
     def get_admin_chat_id(cls) -> Optional[int]:
-        """Asosiy admin chat ID sini olish"""
+        """Asosiy admin chat ID sini olish (Boshliqni birinchi o'ringa qo'yadi)"""
+        try:
+            from services.channel_service import ChannelService
+            boss_id = ChannelService.get_boss_id()
+            if boss_id:
+                return int(boss_id)
+        except Exception:
+            pass
+
         if ADMIN_CHAT_ID and ADMIN_CHAT_ID.lstrip("-").isdigit():
             return int(ADMIN_CHAT_ID)
         if ADMIN_TELEGRAM_IDS:
@@ -353,33 +362,42 @@ class HandoffService:
         # LLM chaqiruvi (Gemini orqali xulosa chiqarishga urinish)
         from config import GEMINI_API_KEY
         if GEMINI_API_KEY and len(history) >= 2:
-            try:
-                import google.generativeai as genai
-                genai.configure(api_key=GEMINI_API_KEY)
-                model = genai.GenerativeModel("gemini-3.8-flash")
-
-                hist_text = "\n".join([f"{m.get('role')}: {m.get('content')}" for m in history[-10:]])
-                prompt = (
-                    "Quyidagi mijoz va do'kon boti muloqotini QAT'IY 5 TA QATORDA xulosa qilib ber.\n"
-                    "QOIDALAR:\n"
-                    "- Matn aynan 5 ta qatordan iborat bo'lsin.\n"
-                    "- Har bir qator '1. ', '2. ', '3. ', '4. ', '5. ' bilan boshlansin.\n"
-                    "- Faktlarga asoslangan qisqa va aniq bo'lsin.\n"
-                    f"Sabab: {reason}\n\n"
-                    f"Muloqot:\n{hist_text}\n\n"
-                    "5-qatorli xulosa:"
-                )
-                resp = model.generate_content(prompt, generation_config={"temperature": 0.2})
-                if resp and resp.text:
-                    lines = [ln.strip() for ln in resp.text.split("\n") if ln.strip()]
-                    if len(lines) == 5:
-                        formatted = []
-                        for idx, ln in enumerate(lines, 1):
-                            clean_ln = re.sub(r"^\d+[\.\)]\s*", "", ln)
-                            formatted.append(f"{idx}. {clean_ln}")
-                        return "\n".join(formatted)
-            except Exception as e:
-                logger.warning(f"LLM 5-line summary generation fallback: {e}")
+            hist_text = "\n".join([f"{m.get('role')}: {m.get('content')}" for m in history[-10:]])
+            prompt = (
+                "Quyidagi mijoz va do'kon boti muloqotini QAT'IY 5 TA QATORDA xulosa qilib ber.\n"
+                "QOIDALAR:\n"
+                "- Matn aynan 5 ta qatordan iborat bo'lsin.\n"
+                "- Har bir qator '1. ', '2. ', '3. ', '4. ', '5. ' bilan boshlansin.\n"
+                "- Faktlarga asoslangan qisqa va aniq bo'lsin.\n"
+                f"Sabab: {reason}\n\n"
+                f"Muloqot:\n{hist_text}\n\n"
+                "5-qatorli xulosa:"
+            )
+            payload = {
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {"temperature": 0.2, "maxOutputTokens": 250}
+            }
+            models_to_try = ["gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.6-flash"]
+            for model_name in models_to_try:
+                try:
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
+                    resp = requests.post(url, json=payload, timeout=8)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        candidates = data.get("candidates", [])
+                        if candidates and "content" in candidates[0]:
+                            parts = candidates[0]["content"].get("parts", [])
+                            if parts and "text" in parts[0]:
+                                text_val = parts[0]["text"].strip()
+                                lines = [ln.strip() for ln in text_val.split("\n") if ln.strip()]
+                                if len(lines) == 5:
+                                    formatted = []
+                                    for idx, ln in enumerate(lines, 1):
+                                        clean_ln = re.sub(r"^\d+[\.\)]\s*", "", ln)
+                                        formatted.append(f"{idx}. {clean_ln}")
+                                    return "\n".join(formatted)
+                except Exception as e:
+                    logger.warning(f"LLM 5-line summary error with {model_name}: {e}")
 
         # Deterministik zaxira generator (Always guaranteed 5 lines)
         user_msgs = [m.get("content", "").strip() for m in history if m.get("role") == "user" and m.get("content")]

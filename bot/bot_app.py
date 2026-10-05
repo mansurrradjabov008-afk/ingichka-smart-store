@@ -20,7 +20,7 @@ if sys.platform == "win32":
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.filters import CommandStart, Command
-from aiogram.enums import ChatType
+from aiogram.enums import ChatType, ChatMemberStatus
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types.error_event import ErrorEvent
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
@@ -61,6 +61,7 @@ from services.media_input_service import (
     PHOTO_API_FALLBACK_MSG, VOICE_API_FALLBACK_MSG, VOICE_EMPTY_TRANSCRIPT_MSG,
     VOICE_TOO_LONG_MSG, PHOTO_NO_STOCK_MSG
 )
+from services.channel_service import ChannelService
 from bot.keyboards import (
     get_main_menu, get_category_keyboard, get_report_periods_keyboard,
     get_order_action_keyboard, get_order_approval_keyboard, get_phone_request_keyboard, get_location_request_keyboard,
@@ -118,6 +119,10 @@ def is_admin_user(user: Optional[types.User], chat_id: Optional[int] = None) -> 
         return False
     u_id = user.id if user else None
     c_id = chat_id
+    if u_id and ChannelService.is_boss(u_id):
+        return True
+    if c_id and ChannelService.is_boss(c_id):
+        return True
     if ADMIN_CHAT_ID:
         if (u_id and str(u_id) == str(ADMIN_CHAT_ID)) or (c_id and str(c_id) == str(ADMIN_CHAT_ID)):
             return True
@@ -223,6 +228,14 @@ async def cmd_start(message: types.Message):
     user_name = message.from_user.full_name or "Mijoz"
     username = message.from_user.username
     is_admin = is_admin_user(message.from_user)
+
+    if not is_admin:
+        try:
+            is_owner = await ChannelService.check_user_is_channel_owner(bot, user_id)
+            if is_owner:
+                is_admin = True
+        except Exception:
+            pass
 
     # DB ga mijozni qayd etish
     DatabaseManager.upsert_customer(
@@ -865,11 +878,126 @@ async def handle_broadcast_send(message: types.Message):
 
     await message.answer(f"✅ E'lon {sent_count} ta mijozga muvaffaqiyatli yetkazildi!")
 
-# 4.01 Savdo Kanaliga Post Joylash (Admin)
+# =========================================================
+# KANAL VA DO'KON EGASI (BOSHLIQ) BOSHQARUV TIZIMI
+# =========================================================
+
+@dp.my_chat_member()
+async def handle_my_chat_member(event: types.ChatMemberUpdated):
+    """
+    Bot kanalga admin qilib qo'shilganda yoki huquqlari yangilanganda:
+    1. Kanalni do'kon tizimiga ulaydi.
+    2. Kanal yaratuvchisini (Boshliq / Do'kon egasi) avtomatik aniqlaydi va Super Admin qiladi.
+    3. Boshliqqa va kanalga xabar beradi.
+    """
+    if event.chat.type not in [ChatType.CHANNEL, ChatType.SUPERGROUP]:
+        return
+
+    new_status = event.new_chat_member.status
+    if new_status in [ChatMemberStatus.ADMINISTRATOR, "administrator"]:
+        logger.info(f"Bot kanalga admin bo'ldi: {event.chat.title} (ID: {event.chat.id})")
+        sync_res = await ChannelService.sync_channel_and_boss(
+            bot=bot,
+            channel_id=event.chat.id,
+            channel_title=event.chat.title,
+            channel_username=f"@{event.chat.username}" if event.chat.username else None
+        )
+        if sync_res.get("success"):
+            boss_user = sync_res.get("boss_user")
+            boss_name = boss_user.full_name if boss_user else "Do'kon Egasi"
+            boss_id = boss_user.id if boss_user else None
+
+            # Boshliqqa shaxsiy tabrik va qo'llanma yuborish
+            if boss_id:
+                boss_msg = (
+                    f"🎉 **Assalomu alaykum, Hurmatli Boshliq ({boss_name})!**\n\n"
+                    f"Sizning **'{event.chat.title}'** kanalingizga AI Sotuvchi boti muvaffaqiyatli ulandi!\n"
+                    f"👑 Siz ushbu botning **Boshlig'i (Do'kon Egasi)** sifatida tasdiqlandingiz.\n\n"
+                    f"✨ **Bot imkoniyatlari:**\n"
+                    f"1. 🛍️ Mijozlar bilan 24/7 sotuvchi kabi muloqot qiladi va buyurtmalar oladi.\n"
+                    f"2. 📦 Yangi buyurtma tushganda darhol sizga xabar va tasdiqlash tugmalarini yuboradi.\n"
+                    f"3. 📢 Kanalga tovar joylash uchun: `/kanalga_post <tovar_id>` buyrug'idan foydalaning.\n"
+                    f"4. 📊 Savdo hisoboti va boshqaruv uchun: `/boshliq` deb yozing.\n"
+                    f"5. 🎙️ Ovozli boshqaruv: Siz botga oddiy ovozli xabar yuborib tovar qo'shishingiz mumkin!"
+                )
+                await safe_send(boss_id, boss_msg)
+
+            # Kanalga e'lon berish
+            bot_info = await bot.get_me()
+            chan_intro = (
+                f"👋 **Assalomu alaykum, aziz xaridorlar!**\n\n"
+                f"Do'konimiz kanaliga rasmiy **MarkazSavdo AI Sotuvchi** yordamchisi ulandi! 🛍️\n"
+                f"Endi siz tovarlarimiz narxi, razmeri, rangi haqida ma'lumot olishingiz "
+                f"hamda uydan chiqmasdan 1-bosishda buyurtma berishingiz mumkin.\n\n"
+                f"👉 Bot bilan suhbatlashish: @{bot_info.username}"
+            )
+            try:
+                await bot.send_message(chat_id=event.chat.id, text=chan_intro)
+            except Exception as e:
+                logger.warning(f"Could not post intro to channel: {e}")
+
+@dp.message(Command("boshliq"))
+@dp.message(Command("admin"))
+async def cmd_boss_panel(message: types.Message):
+    """Do'kon Egasi (Boshliq) Boshqaruv Paneli"""
+    user_id = message.from_user.id
+    is_adm = is_admin_user(message.from_user, chat_id=message.chat.id)
+    if not is_adm:
+        is_owner = await ChannelService.check_user_is_channel_owner(bot, user_id)
+        if not is_owner:
+            await message.answer("Kechirasiz, ushbu bo'lim faqat do'kon egasi (Boshliq) uchun mo'ljallangan.")
+            return
+
+    # Savdo va ombor statistikasini olish
+    summary = DatabaseManager.get_analytics_summary()
+    bot_info = await bot.get_me()
+    dash_text = ChannelService.format_boss_dashboard(summary, bot_username=bot_info.username or "Markazsavdo00_bot")
+    await safe_send(message.chat.id, dash_text)
+
+@dp.message(Command("claim_boss"))
+async def cmd_claim_boss(message: types.Message):
+    """Kanal egasi sifatida boshliq maqomini tasdiqlash"""
+    user_id = message.from_user.id
+    is_owner = await ChannelService.check_user_is_channel_owner(bot, user_id)
+    if is_owner:
+        await message.answer("👑 **Tabriklaymiz!** Siz rasman do'kon va bot Boshlig'i sifatida tasdiqlandingiz. Barcha boshqaruv imkoniyatlarini ko'rish uchun `/boshliq` deb yozing.")
+    else:
+        await message.answer("⚠️ Kechirasiz, siz ulangan savdo kanalining yaratuvchisi emassiz yoki bot kanalda admin emas. Botni kanalingizga admin qiling va qayta `/claim_boss` bosing.")
+
+@dp.message(Command("set_channel"))
+async def cmd_set_channel(message: types.Message):
+    """Yangi savdo kanalini ulash: /set_channel @kanal_nomi"""
+    if not is_admin_user(message.from_user, chat_id=message.chat.id):
+        await message.answer("Kechirasiz, bu buyruq faqat Boshliq uchun ruxsat etilgan.")
+        return
+
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer("Foydalanish: `/set_channel @kanal_username` yoki `/set_channel -100XXXXXXX`")
+        return
+
+    target = parts[1].strip()
+    try:
+        chat = await bot.get_chat(target)
+        sync_res = await ChannelService.sync_channel_and_boss(
+            bot=bot,
+            channel_id=chat.id,
+            channel_title=chat.title,
+            channel_username=f"@{chat.username}" if chat.username else target
+        )
+        if sync_res.get("success"):
+            await message.answer(f"✅ Savdo kanali muvaffaqiyatli ulandi:\n📢 **{chat.title}** ({target})")
+        else:
+            await message.answer(f"⚠️ Kanalni ulashda xatolik: {sync_res.get('error')}")
+    except Exception as e:
+        await message.answer(f"⚠️ Kanal topilmadi yoki bot u yerda admin emas: {e}\nIltimos, avval botni (@{(await bot.get_me()).username}) kanalingizga administrator qilib qo'shing.")
+
+# 4.01 Savdo Kanaliga Post Joylash (Admin / Boshliq)
 @dp.message(Command("kanalga_post"))
+@dp.message(Command("post_channel"))
 @dp.message(Command("post"))
 async def handle_post_to_channel(message: types.Message):
-    if message.from_user.id not in ADMIN_TELEGRAM_IDS:
+    if not is_admin_user(message.from_user, chat_id=message.chat.id):
         return
 
     parts = message.text.split()
@@ -878,8 +1006,8 @@ async def handle_post_to_channel(message: types.Message):
             "📢 **Savdo Kanaliga 1-Bosishda Xarid Postini Joylash:**\n\n"
             "Foydalanish: `/kanalga_post <mahsulot_id> [@kanal_username]`\n\n"
             "📌 Masalan:\n"
-            "`/kanalga_post 16` — Post preview ko'rish va forward qilish uchun;\n"
-            "`/kanalga_post 16 @markaz_savdo` — To'g'ridan-to'g'ri kanalga joylash uchun (bot kanalda admin bo'lishi kerak)."
+            "`/kanalga_post 16` — Ulangan rasmiy kanalga to'g'ridan-to'g'ri joylash;\n"
+            "`/kanalga_post 16 @boshqa_kanal` — Boshqa kanalga joylash."
         )
         return
 
@@ -896,10 +1024,11 @@ async def handle_post_to_channel(message: types.Message):
 
     bot_info = await bot.get_me()
     bot_username = bot_info.username or "Markazsavdo00_bot"
-    post_text = OrderMatcher.format_channel_post(prod, bot_username)
-    buy_kb = get_channel_buy_button(prod_id, bot_username)
+    post_text, buy_kb = ChannelService.format_channel_post(prod, bot_username)
 
-    channel_target = parts[2] if len(parts) > 2 else CHANNEL_USERNAME
+    cfg = ChannelService.get_config()
+    channel_target = parts[2] if len(parts) > 2 else (cfg.get("channel_id") or cfg.get("channel_username") or CHANNEL_USERNAME)
+
     if channel_target:
         try:
             if prod.get("photo_id"):
@@ -907,14 +1036,10 @@ async def handle_post_to_channel(message: types.Message):
             else:
                 await bot.send_message(chat_id=channel_target, text=post_text, parse_mode="Markdown", reply_markup=buy_kb)
             await message.answer(f"✅ Post muvaffaqiyatli ravishda **{channel_target}** kanaliga joylandi!")
-            if prod.get("photo_id"):
-                await bot.send_photo(chat_id=message.chat.id, photo=prod["photo_id"], caption=post_text, parse_mode="Markdown", reply_markup=buy_kb)
-            else:
-                await bot.send_message(chat_id=message.chat.id, text=post_text, parse_mode="Markdown", reply_markup=buy_kb)
             return
         except Exception as e:
             await message.answer(
-                f"⚠️ **{channel_target}** kanaliga avtomatik joylashda xatolik yuz berdi: {e}\n\n"
+                f"⚠️ **{channel_target}** kanaliga avtomatik joylashda xatolik: {e}\n\n"
                 f"💡 **Sababi:** Bot ushbu kanalga Administrator qilib qo'shilmagan yoki post joylash huquqi berilmagan.\n"
                 f"Iltimos, botni (@{bot_username}) kanalingizga Admin qiling va qayta `/kanalga_post {prod_id}` yuboring.\n\n"
                 f"Quyida tayyor post berildi, uni hozircha kanalingizga Forward qilishingiz mumkin 👇"
@@ -1739,6 +1864,9 @@ async def handle_private_chat(message: types.Message):
             db_ord_id = step_res.get("db_order_id") or 0
             kb = get_order_approval_keyboard(db_ord_id)
             target_admins = list(ADMIN_TELEGRAM_IDS)
+            boss_id = ChannelService.get_boss_id()
+            if boss_id and boss_id not in target_admins:
+                target_admins.append(boss_id)
             if ADMIN_CHAT_ID and ADMIN_CHAT_ID.lstrip("-").isdigit() and int(ADMIN_CHAT_ID) not in target_admins:
                 target_admins.append(int(ADMIN_CHAT_ID))
             for aid in target_admins:
