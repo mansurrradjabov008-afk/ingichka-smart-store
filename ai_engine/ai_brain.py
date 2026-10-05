@@ -175,6 +175,11 @@ Sen — "{STORE_NAME}" do'konining professional va samimiy BOSH SOTUVCHI-MASLAHA
    - Chegirma qoidasi: Maksimal chegirma 5% va faqat 2 va undan ortiq tovar xarid qilinganda beriladi. 1 ta tovar uchun yoki 5% dan ko'p so'ralsa rad etiladi.
    - Shoshiltirish (Urgency): Omborda tovar soni 3 yoki kamroq bo'lsagina haqiqiy qoldiq sonini ayt ("omborda atigi N dona qoldi"). 3 tadan ko'p bo'lsa hech qachon sun'iy kamomad to'qima.
    - Ohang va emojilar: Samimiy, qisqa (2-3 gap), insoniy. Emojilar bilan spam qilma (har bir xabarda MAKSIMAL 1 TA emoji).
+
+7. KANAL POSTLARI VA RASMLAR OSTIDAGI SAVOLLAR:
+   - Agar foydalanuvchi "bu kiyim", "bu krasovka", "bu rasmdagi", "haqida ma'lumot" deb so'rasa yoki do'kon kanali posti ostida savol bersa:
+   - ASLO VA HECH QACHON "Afsuski, rasmni ko'rolmayapman" dema!
+   - Taqdim etilgan mahsulot ma'lumotlari yoki katalogdagi eng mos tovar (nomi, narxi, razmeri, rangi, holati) asosida aniq, chiroyli va to'liq ma'lumot ber.
 """
 
     def ask(self, chat_id: Optional[int] = None, user_message: str = "", customer_name: str = "Mijoz", user_id: Optional[int] = None) -> str:
@@ -379,6 +384,11 @@ Sen — "{STORE_NAME}" do'konining professional va samimiy BOSH SOTUVCHI-MASLAHA
    - FAQAT xaridorga qaratilgan toza yakuniy matnni yoz!
    - Hech qanday "Sentence 1", "Sales Flow", rejalashtirish yoki texnik izohlar yozish QAT'IYAN TAQIQLANADI!
    - To'g'ridan-to'g'ri mijozga aytiladigan gapni yoz.
+
+8. KANAL POSTLARI VA RASMLAR OSTIDAGI SAVOLLAR:
+   - Agar foydalanuvchi "bu kiyim", "bu krasovka", "bu rasmdagi", "haqida ma'lumot" deb so'rasa yoki kontekstda mahsulot ko'rsatilgan bo'lsa:
+   - ASLO VA HECH QACHON "Afsuski, rasmni ko'rolmayapman" dema!
+   - Berilgan mahsulot ma'lumotlari yoki katalogdagi eng mos tovar (nomi, narxi, razmeri, rangi, holati) asosida darhol aniq, chiroyli va to'liq ma'lumot ber.
 
 DO'KON MAHSULOTLARI (products.json):
 {catalog_str}
@@ -655,17 +665,23 @@ DO'KON SHARTLARI (store_info.json):
         # 1. Query (Mahsulot nomi yoki alias)
         query = None
         keywords_map = {
-            "krossovka": ["krasovka", "krossovka", "krasovki", "krossovki", "krasovkalar", "krossovkalar", "кроссовк", "sneaker", "oyoq kiyim", "poyabzal"],
-            "kurtka": ["kurtka", "куртка", "jacket"],
-            "futbolka": ["futbolka", "футболк", "t-shirt", "mayka"],
-            "jinsi": ["jinsi", "shim", "джинсы", "брюки", "jeans"],
-            "ko'ylak": ["ko'ylak", "koylak", "платье", "dress"],
+            "krossovka": [
+                "krasovka", "krossovka", "krasovki", "krossovki", "krasovkalar", "krossovkalar",
+                "krasofka", "krasofkacha", "krosofka", "krosovka", "krasovkacha", "кроссовк", "красовк", "sneaker", "oyoq kiyim", "poyabzal"
+            ],
+            "kurtka": ["kurtka", "kurtkacha", "куртка", "jacket", "vitrofka", "vetrovka"],
+            "futbolka": ["futbolka", "futbolkacha", "футболк", "t-shirt", "mayka"],
+            "jinsi": ["jinsi", "shim", "shimcha", "triko", "джинсы", "брюки", "jeans"],
+            "ko'ylak": ["ko'ylak", "koylak", "koylakcha", "ko'ylakcha", "tonika", "dvoyka", "платье", "dress"],
             "palto": ["palto", "пальто", "coat"],
             "kepka": ["kepka", "кепка", "бейсболка", "cap"],
-            "sport kostyum": ["sportivka", "sport kostyum", "спортивка"],
+            "sport kostyum": ["sportivka", "sport kostyum", "kostyum", "troyka", "troykacha", "спортивка"],
+            "pijama": ["pijama", "pijamacha", "pijamalar", "uy kiyimi", "пижама"],
+            "svitir": ["svitir", "sviter", "svitercha", "kofta", "koftacha", "xudi", "hoodie", "pulover", "джемпер", "свитер", "кофта"],
             "qishki": ["qishki", "qish", "issiqlik", "issiq kiyim", "qishki kiyim", "qishki kiyimlar", "зимн", "теплая одежда"],
             "ichki kiyim": ["ichki", "ichki kiyim", "trusik", "boksyor", "termo", "briefs", "трусы", "нижнее белье"],
-            "paypoq": ["paypoq", "paypoqlar", "noski", "носки", "socks"]
+            "paypoq": ["paypoq", "paypoqlar", "noski", "носки", "socks"],
+            "tapichka": ["tapichka", "tapochka", "shippak", "slansi", "тапочки"]
         }
         for canon, aliases in keywords_map.items():
             if any(a in t_low for a in aliases):
@@ -710,6 +726,8 @@ DO'KON SHARTLARI (store_info.json):
             category = "Ayollar kiyimi"
         elif any(w in t_low for w in ["erkak", "erkaklar", "erim", "otam", "o'zim", "мужск"]):
             category = "Erkaklar kiyimi"
+        elif any(w in t_low for w in ["bolalar", "bola", "bolacha", "bolalarga", "chaqaloq", "детск"]):
+            category = "Bolalar kiyimi"
 
         # 3. Size (Barcha o'lchamlar va 45-razmer kabi holatlar)
         size = None

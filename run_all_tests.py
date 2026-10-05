@@ -25,7 +25,8 @@ UNITTEST_SUITES = [
     ("tests.test_task5_human_handoff", "Task 5: Human Handoff & /bot_on"),
     ("tests.test_task6_media_input", "Task 6: Voice Transcription & Vision Search"),
     ("tests.test_world_class_upgrade", "World-Class Retail Upgrades"),
-    ("tests.test_enterprise_features", "Enterprise VIP Loyalty & AI Stylist")
+    ("tests.test_enterprise_features", "Enterprise VIP Loyalty & AI Stylist"),
+    ("tests.test_channel_reply_intelligence", "Channel Post Replies & Discussion Intelligence")
 ]
 
 PROCEDURAL_SUITES = [
@@ -38,7 +39,7 @@ PROCEDURAL_SUITES = [
 
 def main():
     print("=" * 70)
-    print("🚀 RUNNING ALL 14 VERIFICATION SUITES FOR MARKAZSAVDO AI STORE BOT")
+    print("🚀 RUNNING ALL 15 VERIFICATION SUITES FOR MARKAZSAVDO AI STORE BOT")
     print("=" * 70)
 
     total_tests = 0

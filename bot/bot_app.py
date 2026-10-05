@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 import io
+import re
 import base64
 from pathlib import Path
 from typing import Optional, Dict, Any, List
@@ -1785,7 +1786,8 @@ async def handle_voice_message(message: types.Message):
 # 9. Telegram Guruhlar va Shaxsiy Chatlar (AI Sotuvchi muloqoti + Buyurtma olish)
 @dp.message(F.chat.type.in_([ChatType.GROUP, ChatType.SUPERGROUP]))
 async def handle_group_message(message: types.Message):
-    if not message.text:
+    raw_text = (message.text or message.caption or "").strip()
+    if not raw_text:
         return
 
     # Kanaldan avtomatik uzatilgan postlar va botlarga javob bermaslik (Anti-Spam)
@@ -1794,38 +1796,59 @@ async def handle_group_message(message: types.Message):
     if not message.from_user or message.from_user.is_bot:
         return
 
-    text = message.text.lower()
     bot_info = await bot.get_me()
     bot_username = (bot_info.username or "Markazsavdo00_bot").lower()
 
+    text_lower = raw_text.lower()
+    clean_user_text = raw_text.replace(f"@{bot_info.username}", "").strip()
+
     # Botga murojaat qilinganmi (mention yoki reply)
-    is_mentioned = f"@{bot_username}" in text
+    is_mentioned = f"@{bot_username}" in text_lower
     is_reply_to_bot = bool(
         message.reply_to_message and
         message.reply_to_message.from_user and
         message.reply_to_message.from_user.id == bot_info.id
     )
 
+    # Kanal posti yoki xabarga reply qilinganmi
+    is_reply_to_post = bool(message.reply_to_message)
+    replied_caption = ""
+    is_reply_to_channel = False
+    if message.reply_to_message:
+        replied_caption = (
+            message.reply_to_message.caption or
+            message.reply_to_message.text or
+            ""
+        ).strip()
+        if (
+            getattr(message.reply_to_message, "is_automatic_forward", False) or
+            getattr(message.reply_to_message, "sender_chat", None) or
+            getattr(message.reply_to_message, "forward_from_chat", None)
+        ):
+            is_reply_to_channel = True
+
     triggers = [
-        "qancha", "narxi", "razmer", "bor", "bormi", "kurtka", "xudi", "ko'ylak", "koylak",
-        "sumka", "sochiq", "ingichka", "dostavka", "yetkazish", "krasovka", "krossovka",
+        "qancha", "narxi", "narx", "necha pul", "nechi pul", "razmer", "o'lcham", "bor", "bormi",
+        "kurtka", "xudi", "ko'ylak", "koylak", "sumka", "sochiq", "ingichka", "dostavka", "yetkazish",
+        "krasovka", "krossovka", "krasofka", "krasofkacha", "krosovka", "krosofka", "krasovkacha",
         "poyabzal", "tufli", "jinsi", "shim", "kiyim", "katalog", "chegirma", "aktsiya",
-        "красовка", "худи", "куртка", "сочик", "туфли", "доставка"
+        "pijama", "pijamacha", "futbolka", "sviter", "svitir", "kofta", "koftacha", "sportivka",
+        "troyka", "kostyum", "tapichka", "shippak", "haqida", "xaqida", "malumot", "ma'lumot",
+        "rasmdagi", "rasm", "olaman", "olmoqchiman", "sotib", "xarid", "zakaz", "buyurtma",
+        "красовка", "кроссовки", "худи", "куртка", "сочик", "туфли", "доставка", "цена", "размер"
     ]
-    has_trigger = any(t in text for t in triggers)
+    has_trigger = any(t in text_lower for t in triggers)
+    should_process = has_trigger or is_mentioned or is_reply_to_bot or is_reply_to_channel or (is_reply_to_post and bool(replied_caption))
 
-
-    if has_trigger or is_mentioned or is_reply_to_bot:
+    if should_process:
         try:
             await bot.send_chat_action(chat_id=message.chat.id, action="typing")
         except Exception:
             pass
 
-        clean_user_text = message.text.replace(f"@{bot_info.username}", "").strip()
-
-        # 1. Do'kon sozlamalari tekshiruvi
-        setting_inq = StoreSettingsManager.check_setting_inquiry(clean_user_text or message.text)
-        if setting_inq:
+        # 1. Do'kon sozlamalari tekshiruvi (faqat to'g'ridan-to'g'ri sozlama so'ralganda)
+        setting_inq = StoreSettingsManager.check_setting_inquiry(clean_user_text or raw_text)
+        if setting_inq and not is_reply_to_channel and not is_reply_to_post:
             await safe_send(message.chat.id, setting_inq["reply"])
             if setting_inq["empty"]:
                 for aid in ADMIN_TELEGRAM_IDS:
@@ -1835,28 +1858,107 @@ async def handle_group_message(message: types.Message):
                         pass
             return
 
-        # 2. Qoida 7: Mavjud bo'lmagan o'lcham
-        size_inq = OrderMatcher.check_size_inquiry(clean_user_text or message.text)
-        if size_inq:
-            await safe_send(message.chat.id, size_inq)
-            return
+        # 2. Qoida 7: Mavjud bo'lmagan o'lcham (agar postga reply bo'lmasa)
+        if not is_reply_to_post and not is_reply_to_channel:
+            size_inq = OrderMatcher.check_size_inquiry(clean_user_text or raw_text)
+            if size_inq:
+                await safe_send(message.chat.id, size_inq)
+                return
 
         # 3. Qoida 4: Narx bo'yicha filtr
-        price_filt = OrderMatcher.parse_price_filter(clean_user_text or message.text)
-        if price_filt:
-            prods = OrderMatcher.filter_products_by_price(price_filt["min_price"], price_filt["max_price"])
-            reply_filt = OrderMatcher.format_price_filter_response(prods, price_filt["min_price"], price_filt["max_price"])
-            await safe_send(message.chat.id, reply_filt)
-            return
+        if not is_reply_to_post and not is_reply_to_channel:
+            price_filt = OrderMatcher.parse_price_filter(clean_user_text or raw_text)
+            if price_filt:
+                prods = OrderMatcher.filter_products_by_price(price_filt["min_price"], price_filt["max_price"])
+                reply_filt = OrderMatcher.format_price_filter_response(prods, price_filt["min_price"], price_filt["max_price"])
+                await safe_send(message.chat.id, reply_filt)
+                return
 
-        # 4. Katta AI javobi
+        # 4. KANAL POSTIDAGI MAHSULOTNI ANIQ ANIQLASH (Zero Hallucination + Exact Product Match)
+        target_prod = None
+        if replied_caption:
+            target_prod = OrderMatcher.match_product(replied_caption)
+            if not target_prod:
+                target_prod = OrderMatcher.match_product(f"{clean_user_text} {replied_caption}")
+        if not target_prod:
+            target_prod = OrderMatcher.match_product(clean_user_text)
+
+        if target_prod:
+            p_name = target_prod.get("name")
+            p_price = target_prod.get("sale_price", 0)
+            p_size = target_prod.get("size", "Mavjud")
+            p_color = target_prod.get("color", "Mavjud")
+            p_stock = target_prod.get("stock_quantity", 0)
+            p_desc = target_prod.get("description", "")
+            p_mat = target_prod.get("material") or p_desc
+            p_id = target_prod.get("id")
+
+            # Xarid tugmalari
+            pm_button = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text=f"⚡️ Hoziroq xarid qilish ({p_price:,.0f} so'm)",
+                    url=f"https://t.me/{bot_info.username}?start=buy_{p_id}"
+                )],
+                [InlineKeyboardButton(
+                    text="💬 Sotuvchi bilan shaxsiy muloqot",
+                    url=f"https://t.me/{bot_info.username}"
+                )]
+            ])
+
+            # Agar mijoz mahsulot haqida umumiy so'rayotgan bo'lsa (ma'lumot, narx, razmer, bormi)
+            info_triggers = ["malumot", "ma'lumot", "haqida", "xaqida", "rasmdagi", "bu krasovka", "bu kiyim", "narxi", "qancha", "necha pul", "nechi pul", "razmer", "o'lcham", "rang", "bormi"]
+            is_general_info = any(w in text_lower for w in info_triggers) or len(clean_user_text.split()) <= 6
+
+            if is_general_info:
+                if p_stock <= 0:
+                    stock_line = "❌ Hozirda ushbu tovar omborda tugagan."
+                elif p_stock <= 2:
+                    stock_line = f"⚠️ Shoshiling, omborda oxirgi {p_stock} dona qoldi!"
+                else:
+                    stock_line = f"✅ Omborda mavjud ({p_stock} dona)."
+
+                clean_mat = re.sub(r"SKU:\s*[A-Z0-9-]+\.?", "", p_mat).strip() if p_mat else ""
+
+                reply_card = (
+                    f"✨ <b>{p_name}</b>\n\n"
+                    f"💰 <b>Narxi:</b> {p_price:,.0f} so'm\n"
+                    f"📏 <b>Mavjud o'lchamlar:</b> {p_size}\n"
+                    f"🎨 <b>Ranglari:</b> {p_color}\n"
+                    f"📦 <b>Holati:</b> {stock_line}\n"
+                )
+                if clean_mat:
+                    reply_card += f"ℹ️ <b>Tavsif:</b> {clean_mat}\n"
+
+                reply_card += f"\n🛍️ <i>Xarid qilish yoki buyurtma berish uchun pastdagi tugmani bosing:</i>"
+                await safe_send(message.chat.id, reply_card, reply_markup=pm_button)
+                return
+            else:
+                # Murakkab / maslahat so'rovi bo'lsa, AI ga to'liq kontekst beramiz
+                prompt_with_context = (
+                    f"[DIQQAT: Xaridor do'kon kanalidagi #{p_id} - '{p_name}' "
+                    f"(Narxi: {p_price:,.0f} so'm, O'lcham: {p_size}, Rang: {p_color}, "
+                    f"Omborda: {p_stock} dona, Tavsif: {p_mat}) posti ostida savol bermoqda. "
+                    f"HECH QACHON 'rasmni ko'rolmayapman' dema! Ushbu tovar bo'yicha aniq maslahat ber]: {clean_user_text}"
+                )
+                ai_reply = ai_brain.ask(
+                    user_id=message.from_user.id,
+                    user_message=prompt_with_context,
+                    customer_name=message.from_user.first_name or "Mijoz"
+                )
+                await safe_send(message.chat.id, ai_reply, reply_markup=pm_button)
+                return
+
+        # 5. Umumiy AI javobi (agar aniq tovar topilmagan bo'lsa)
+        user_query_for_ai = clean_user_text or raw_text
+        if replied_caption:
+            user_query_for_ai = f"[Kanal postidagi izoh: '{replied_caption[:150]}']: {user_query_for_ai}"
+
         ai_reply = ai_brain.ask(
             user_id=message.from_user.id,
-            user_message=clean_user_text or message.text,
+            user_message=user_query_for_ai,
             customer_name=message.from_user.first_name or "Mijoz"
         )
 
-        # Guruh a'zosiga 1-bosishda bot bilan shaxsiy chat ochish tugmasi
         pm_button = InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text="🛍️ Lichkada xarid qilish", url=f"https://t.me/{bot_info.username}")
         ]])

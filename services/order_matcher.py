@@ -2,6 +2,45 @@ import re
 from typing import Dict, Any, Optional, List, Tuple
 from database.db_manager import DatabaseManager
 
+def normalize_uzbek_word(w: str) -> str:
+    """O'zbek tilidagi kiyim nomlari, qo'shimchalari va shevalarini normallashtirish"""
+    w = w.lower().strip(",.!?\"'`:;()[]{}-_")
+    w = re.sub(r"['`ʻ‘’]", "'", w)
+    if re.search(r"kr[ao]s+[ao][vf]?k", w):
+        return "krossovka"
+    if re.search(r"v[ie]tr[ao][vf]?k", w):
+        return "vitrofka"
+    if re.search(r"svit[ie]r", w):
+        return "svitir"
+    if re.search(r"k[o']?ylak", w):
+        return "ko'ylak"
+    if re.search(r"o'?g'?il", w):
+        return "o'g'il"
+    if re.search(r"p[ie]jam", w):
+        return "pijama"
+    if re.search(r"troyk", w):
+        return "troyka"
+    if re.search(r"dvoyk", w):
+        return "dvoyka"
+    if re.search(r"tap[io]ch?k|shippak", w):
+        return "tapichka"
+    suffixes = [
+        "chalarga", "chalarini", "chalari", "chalardan", "chasi", "chalar", "cha",
+        "larga", "larini", "lardan", "larning", "larni", "lari", "lar",
+        "dagi", "dami", "dek",
+        "ga", "ka", "qa", "da", "dan", "ni", "ning", "si", "i"
+    ]
+    for suf in suffixes:
+        if len(w) > len(suf) + 2 and w.endswith(suf):
+            w = w[:-len(suf)]
+            break
+    if w in ("bola", "bolacha", "bolalar"):
+        return "bolalar"
+    if w in ("qiz", "qizcha", "qizaloq", "qizlar"):
+        return "qiz"
+    return w
+
+
 class OrderMatcher:
     """
     Intellektual Mahsulot va Buyurtma Aniqlash Tizimi:
@@ -75,10 +114,12 @@ class OrderMatcher:
             if ord_match:
                 return ord_match
 
-        # 3. Dinamik ko'p parametrli qidiruv (Barcha 49 ta tovar bo'yicha)
+        # 3. Dinamik ko'p parametrli qidiruv (Barcha tovarlar bo'yicha)
         all_prods = DatabaseManager.get_products(in_stock_only=False)
         best_dyn_prod = None
         best_dyn_score = 0
+
+        t_words = [normalize_uzbek_word(w) for w in t_low.split()]
 
         for p in all_prods:
             p_name = p.get("name", "").lower()
@@ -86,6 +127,7 @@ class OrderMatcher:
             p_color = p.get("color", "").lower()
             p_brand = (p.get("brand") or "").lower()
             p_desc = (p.get("description") or "").lower()
+            p_name_words = [normalize_uzbek_word(w) for w in p_name.split()]
 
             score = 0
             if p_name and (p_name in t_low or (len(t_low) >= 5 and t_low in p_name)):
@@ -98,9 +140,29 @@ class OrderMatcher:
                 score += 20
             if p_color and p_color in t_low:
                 score += 15
-            for w in t_low.split():
-                if len(w) >= 4 and (w in p_name or w in p_desc):
-                    score += 10
+
+            # O'zbekcha so'z ildizlari va sinonimlari bo'yicha moslik
+            for qw in t_words:
+                if len(qw) >= 3:
+                    if qw in p_name_words:
+                        score += 30
+                    elif qw in p_name:
+                        score += 20
+                    elif qw in p_desc:
+                        score += 10
+
+            # Jins (Gender) bo'yicha saralash - O'g'il bolalar va Qiz bolalar tovarlarini adashtirmaslik!
+            if "qiz" in t_words:
+                if "qiz" in p_name_words or "qiz" in p_name:
+                    score += 35
+                elif "o'g'il" in p_name_words or "o'g'il" in p_name:
+                    score -= 45
+
+            if "o'g'il" in t_words:
+                if "o'g'il" in p_name_words or "o'g'il" in p_name:
+                    score += 35
+                elif "qiz" in p_name_words or "qiz" in p_name:
+                    score -= 45
 
             if p.get("stock_quantity", 0) > 0 and score > 0:
                 score += 5
@@ -124,32 +186,45 @@ class OrderMatcher:
                     if p.get("name", "").lower() in content:
                         return p
 
-        # 6. Umumiy kategoriya bo'yicha zaxira (ombordagi birinchi mavjud tovar)
+        # 6. Umumiy kategoriya bo'yicha zaxira (ombordagi birinchi mos tovar)
         cat_triggers = {
             "svitir": "Svitir",
             "sviter": "Svitir",
+            "svitercha": "Svitir",
             "kofta": "Svitir",
+            "koftacha": "Svitir",
             "xudi": "Svitir",
             "kurtka": "Kurtka",
+            "kurtkacha": "Kurtka",
             "vitrofka": "Kurtka",
             "vetrovka": "Kurtka",
             "tapichka": "Oyoq kiyim",
+            "tapochka": "Oyoq kiyim",
             "shippak": "Oyoq kiyim",
             "krossovka": "Oyoq kiyim",
             "krasovka": "Oyoq kiyim",
+            "krasofka": "Oyoq kiyim",
+            "krasofkacha": "Oyoq kiyim",
+            "krosofka": "Oyoq kiyim",
+            "krosovka": "Oyoq kiyim",
             "poyabzal": "Oyoq kiyim",
             "oyoq kiyim": "Oyoq kiyim",
             "futbolka": "Futbolka",
+            "futbolkacha": "Futbolka",
             "jinsi": "Shim",
             "triko": "Shim",
             "shim": "Shim",
+            "shimcha": "Shim",
             "ko'ylak": "Ko'ylak",
             "koylak": "Ko'ylak",
+            "koylakcha": "Ko'ylak",
+            "ko'ylakcha": "Ko'ylak",
             "tonika": "Ko'ylak",
             "kostyum": "Kostyum",
             "sportivka": "Kostyum",
             "kardigan": "Kardigan",
             "pijama": "Pijama",
+            "pijamacha": "Pijama",
             "palto": "Kurtka",
             "tekstil": "Uy tekstili",
             "pastel": "Uy tekstili",
@@ -163,6 +238,15 @@ class OrderMatcher:
                     and p.get("stock_quantity", 0) > 0
                 ]
                 if cat_prods:
+                    # Agar jins ko'rsatilgan bo'lsa, mosini saralash
+                    if "qiz" in t_words:
+                        filtered = [p for p in cat_prods if "qiz" in p.get("name", "").lower()]
+                        if filtered:
+                            return filtered[0]
+                    elif "o'g'il" in t_words:
+                        filtered = [p for p in cat_prods if "o'g'il" in p.get("name", "").lower()]
+                        if filtered:
+                            return filtered[0]
                     return cat_prods[0]
 
     @classmethod
@@ -206,8 +290,12 @@ class OrderMatcher:
             if tap_matches:
                 return tap_matches[:max_limit]
 
-        if any(w in t_low for w in ["krossovka", "krasovka", "kedalar", "keta"]):
+        if any(w in t_low for w in ["krossovka", "krasovka", "krasofka", "krasofkacha", "krosofka", "krosovka", "krasovkacha", "kedalar", "keta"]):
             kros_matches = [p for p in all_prods if "krossovka" in p.get("name", "").lower()]
+            if any(w in t_low for w in ["qiz", "qizlar", "qizlarga", "qizcha"]):
+                kros_matches = [p for p in kros_matches if "qiz" in p.get("name", "").lower()] + [p for p in kros_matches if "qiz" not in p.get("name", "").lower()]
+            elif any(w in t_low for w in ["o'g'il", "ogil", "o‘g‘il", "oʻgʻil", "ogilcha"]):
+                kros_matches = [p for p in kros_matches if "o'g'il" in p.get("name", "").lower()] + [p for p in kros_matches if "o'g'il" not in p.get("name", "").lower()]
             if kros_matches:
                 return kros_matches[:max_limit]
 
@@ -217,31 +305,31 @@ class OrderMatcher:
                 return shoes[:max_limit]
 
         # 3b. Kurtkalar va vitrofkalar
-        if any(w in t_low for w in ["kurtka", "vitrofka", "vetrovka", "jilet", "nimcha", "plash"]):
+        if any(w in t_low for w in ["kurtka", "kurtkacha", "vitrofka", "vetrovka", "jilet", "nimcha", "plash"]):
             kurtkas = [p for p in all_prods if p.get("category") == "Kurtka" or "vitrofka" in p.get("name", "").lower() or "kurtka" in p.get("name", "").lower()]
             if kurtkas:
                 return kurtkas[:max_limit]
 
         # 3c. Svitirlar, sviterlar, koftalar, xudilar
-        if any(w in t_low for w in ["svitir", "sviter", "kofta", "xudi", "hoodie", "pulover", "jumper", "svitshot"]):
+        if any(w in t_low for w in ["svitir", "sviter", "svitercha", "kofta", "koftacha", "xudi", "hoodie", "pulover", "jumper", "svitshot"]):
             sviters = [p for p in all_prods if p.get("category") == "Svitir" or "svitir" in p.get("name", "").lower() or "sviter" in p.get("name", "").lower() or "kofta" in p.get("name", "").lower()]
             if sviters:
                 return sviters[:max_limit]
 
         # 3d. Ko'ylaklar, tonikalar, yubkalar
-        if any(w in t_low for w in ["ko'ylak", "koylak", "koʻylak", "tonika", "dvoyka", "yubka"]):
+        if any(w in t_low for w in ["ko'ylak", "koylak", "koʻylak", "koylakcha", "tonika", "dvoyka", "yubka"]):
             dresses = [p for p in all_prods if p.get("category") == "Ko'ylak" or "ko'ylak" in p.get("name", "").lower() or "tonika" in p.get("name", "").lower()]
             if dresses:
                 return dresses[:max_limit]
 
         # 3e. Shimlar, jinsilar, trikolar
-        if any(w in t_low for w in ["shim", "jinsi", "triko", "bryuk"]):
+        if any(w in t_low for w in ["shim", "shimcha", "jinsi", "triko", "bryuk"]):
             pants = [p for p in all_prods if p.get("category") == "Shim" or "shim" in p.get("name", "").lower() or "jinsi" in p.get("name", "").lower() or "triko" in p.get("name", "").lower()]
             if pants:
                 return pants[:max_limit]
 
         # 3f. Kostyumlar va sportivkalar
-        if any(w in t_low for w in ["kostyum", "sportivka", "troyka"]):
+        if any(w in t_low for w in ["kostyum", "sportivka", "troyka", "troykacha"]):
             suits = [p for p in all_prods if p.get("category") == "Kostyum" or "kostyum" in p.get("name", "").lower() or "sportivka" in p.get("name", "").lower()]
             if suits:
                 return suits[:max_limit]
@@ -253,8 +341,12 @@ class OrderMatcher:
                 return cardigans[:max_limit]
 
         # 3h. Pijamalar
-        if any(w in t_low for w in ["pijama", "uy kiyimi"]):
+        if any(w in t_low for w in ["pijama", "pijamacha", "pijamalar", "uy kiyimi"]):
             pijamas = [p for p in all_prods if p.get("category") == "Pijama" or "pijama" in p.get("name", "").lower()]
+            if any(w in t_low for w in ["qiz", "qizlar", "qizlarga", "qizcha"]):
+                pijamas = [p for p in pijamas if "qiz" in p.get("name", "").lower()] + [p for p in pijamas if "qiz" not in p.get("name", "").lower()]
+            elif any(w in t_low for w in ["o'g'il", "ogil", "o‘g‘il", "oʻgʻil", "ogilcha"]):
+                pijamas = [p for p in pijamas if "o'g'il" in p.get("name", "").lower()] + [p for p in pijamas if "o'g'il" not in p.get("name", "").lower()]
             if pijamas:
                 return pijamas[:max_limit]
 
