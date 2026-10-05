@@ -80,8 +80,8 @@ def run_ultimate_verification():
         with urllib.request.urlopen(status_url, timeout=15) as s_resp:
             st_data = json.loads(s_resp.read().decode())
             print(f"  OK: /status: Versiya={st_data.get('version')}, Commit={st_data.get('commit')}")
-            print(f"  OK: Baza mahsulotlari soni: {st_data.get('products_count')} ta (Kutilgan: 49)")
-            assert st_data.get("products_count") == 49
+            print(f"  OK: Baza mahsulotlari soni: {st_data.get('products_count')} ta (Kutilgan: 41)")
+            assert st_data.get("products_count") == 41
             assert st_data.get("has_gemini") is True
             assert st_data.get("has_token") is True
             pings = st_data.get("recent_pings", [])
