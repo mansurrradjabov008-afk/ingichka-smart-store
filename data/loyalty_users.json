@@ -1,0 +1,32 @@
+{
+  "999001": {
+    "user_id": 999001,
+    "name": "Mijoz",
+    "total_spent": 420000.0,
+    "cashback_balance": 9800.0,
+    "orders_count": 3,
+    "created_at": "2026-10-05T21:02:20.879078",
+    "updated_at": "2026-10-05T21:06:04.411287",
+    "tier": "Kumush"
+  },
+  "999007": {
+    "user_id": 999007,
+    "name": "Mijoz",
+    "total_spent": 210000.0,
+    "cashback_balance": 4200.0,
+    "orders_count": 3,
+    "created_at": "2026-10-05T21:02:21.380793",
+    "updated_at": "2026-10-05T21:06:04.980820",
+    "tier": "Kumush"
+  },
+  "999008": {
+    "user_id": 999008,
+    "name": "Mijoz",
+    "total_spent": 1080000.0,
+    "cashback_balance": 32400.0,
+    "orders_count": 3,
+    "created_at": "2026-10-05T21:02:21.467381",
+    "updated_at": "2026-10-05T21:06:05.042193",
+    "tier": "Platina"
+  }
+}

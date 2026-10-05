@@ -1,1 +1,12 @@
-{}
+{
+  "12345": {
+    "chat_id": 12345,
+    "customer_name": "Mijoz",
+    "username": "yo'q",
+    "reason": "Grounding validator failed twice",
+    "status": "active",
+    "started_at": "2026-10-05T21:06:03.734516",
+    "last_activity_at": "2026-10-05T21:06:03.734516",
+    "summary": "1. Boshlang'ich murojaat: Mijoz do'konimiz bilan muloqotni boshladi\n2. Qiziqish mavzusi: Mijoz do'kon assortimenti va xizmatlari bilan qiziqdi\n3. Bot taqdim etgan oxirgi ma'lumot: Bot salomlashdi va menyuni taqdim etdi\n4. Mijozning oxirgi xabari: Mijozning so'nggi xabari\n5. Yo'naltirish sababi va holat: Grounding validator failed twice"
+  }
+}

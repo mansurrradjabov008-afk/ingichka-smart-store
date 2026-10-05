@@ -8,14 +8,21 @@ from typing import List, Dict, Any, Optional
 from services.catalog_service import load_products
 
 COMPLEMENTARY_MAP = {
-    "futbolka": ["jinsi", "kepka", "sport paypoq"],
-    "jinsi": ["futbolka", "ko'ylak", "kurtka"],
-    "kurtka": ["paypoq", "jinsi", "ko'ylak"],
-    "ko'ylak": ["jinsi", "palto", "kepka"],
-    "palto": ["ko'ylak", "jinsi"],
-    "kepka": ["futbolka", "jinsi"],
-    "paypoq": ["ichki kiyim", "futbolka"],
-    "ichki kiyim": ["paypoq", "futbolka"]
+    "ko'ylak": ["tapichka", "kardigan", "tonika", "shippak"],
+    "tonika": ["kardigan", "tapichka", "jinsi"],
+    "kardigan": ["ko'ylak", "tonika", "tapichka"],
+    "svitir": ["shim", "vitrofka", "kurtka"],
+    "vitrofka": ["svitir", "shim", "triko"],
+    "kurtka": ["svitir", "shim", "triko"],
+    "shim": ["svitir", "vitrofka", "futbolka", "krossovka"],
+    "triko": ["futbolka", "svitir", "krossovka"],
+    "kostyum": ["svitir", "shippak", "tapichka"],
+    "futbolka": ["triko", "shim", "krossovka"],
+    "tapichka": ["ko'ylak", "pastel jild", "uy tekstili"],
+    "shippak": ["ko'ylak", "tonika", "pastel jild"],
+    "pijama": ["tapichka", "krossovka", "pastel jild"],
+    "pastel": ["tapichka", "pijama", "ko'ylak"],
+    "krossovka": ["triko", "futbolka", "vitrofka"]
 }
 
 class RecommendationEngine:

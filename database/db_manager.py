@@ -181,8 +181,18 @@ class DatabaseManager:
         if in_stock_only:
             query += " AND stock_quantity > 0"
         if category:
-            query += " AND category = ?"
-            params.append(category)
+            cat_clean = category.strip()
+            if cat_clean.lower() in ["bolalar", "bolalar kiyimi"]:
+                query += " AND (category LIKE '%Bolalar%' OR gender = 'Bolalar' OR category = 'Pijama')"
+            elif cat_clean.lower() in ["ayol", "ayollar", "ayollar kiyimi"]:
+                query += " AND (gender = 'Ayol' OR category IN ('Ko\'ylak', 'Kardigan'))"
+            elif cat_clean.lower() in ["erkak", "erkaklar", "erkaklar kiyimi"]:
+                query += " AND (gender = 'Erkak')"
+            elif cat_clean.lower() in ["uy tekstili", "tekstil"]:
+                query += " AND (category = 'Uy tekstili' OR category = 'Pijama')"
+            else:
+                query += " AND category = ?"
+                params.append(category)
         if search_query:
             query += " AND (name LIKE ? OR description LIKE ? OR color LIKE ?)"
             term = f"%{search_query}%"

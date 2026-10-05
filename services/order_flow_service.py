@@ -1026,6 +1026,15 @@ class OrderFlowService:
                 f"Kuryerimiz tez orada siz bilan bog'lanib, buyurtmani yetkazib beradi! Xaridingiz barakali bo'lsin! 😊"
             )
 
+            # VIP Keshbek hisoblash (Enterprise Retail Loyalty)
+            try:
+                from services.loyalty_service import LoyaltyService
+                cb = LoyaltyService.award_order_cashback(chat_id, total, order_id=formatted_order_id)
+                if cb.get("earned_points", 0) > 0:
+                    customer_msg += f"\n\n💎 **VIP Keshbek:** Sizga +{cb['earned_points']:,} ball taqdim etildi! (Jami: {cb['new_balance']:,} ball)"
+            except Exception:
+                pass
+
             return {
                 "success": True,
                 "is_duplicate": False,
@@ -1034,3 +1043,4 @@ class OrderFlowService:
                 "reply": customer_msg,
                 "admin_alert": admin_alert
             }
+

@@ -1,12 +1,13 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
 def get_main_menu(is_admin: bool = False, cart_count: int = 0) -> ReplyKeyboardMarkup:
-    """Asosiy menyu tugmalari (Jahon standarti: Katalog, Savatcha, Buyurtmalar, Promokodlar)"""
+    """Asosiy menyu tugmalari (Jahon standarti: Katalog, Savatcha, AI Stilist, VIP Keshbek, Kanal)"""
     cart_text = f"🛒 Savatcham ({cart_count})" if cart_count > 0 else "🛒 Savatcham"
     buttons = [
         [KeyboardButton(text="🛍️ Katalog va Mahsulotlar"), KeyboardButton(text=cart_text)],
+        [KeyboardButton(text="✨ AI Stilist (Komplekt)"), KeyboardButton(text="💎 VIP Keshbek")],
         [KeyboardButton(text="📦 Mening buyurtmalarim"), KeyboardButton(text="🏷️ Aksiya va Promokodlar")],
-        [KeyboardButton(text="🚚 Yetkazib berish"), KeyboardButton(text="📞 Sotuvchi bilan bog'lanish")]
+        [KeyboardButton(text="📢 @markazsavdo Kanali"), KeyboardButton(text="📞 Do'kon Egasi (Mansur aka)")]
     ]
     
     if is_admin:
@@ -22,28 +23,26 @@ def get_main_menu(is_admin: bool = False, cart_count: int = 0) -> ReplyKeyboardM
     )
 
 def get_category_keyboard() -> InlineKeyboardMarkup:
-    """Do'kondagi real tovar kategoriyalari inline tugmalari"""
+    """Do'kondagi real 41 ta tovar kategoriyalari inline tugmalari"""
     buttons = [
         [
-            InlineKeyboardButton(text="👕 Futbolkalar", callback_data="cat_Futbolka"),
-            InlineKeyboardButton(text="👖 Jinsilar", callback_data="cat_Jinsi")
+            InlineKeyboardButton(text="👗 Ayollar kiyimlari", callback_data="cat_Ko'ylak"),
+            InlineKeyboardButton(text="🧥 Kurtkalar & Vitrofkalar", callback_data="cat_Kurtka")
         ],
         [
-            InlineKeyboardButton(text="👔 Ko'ylaklar", callback_data="cat_Ko'ylak"),
-            InlineKeyboardButton(text="🧥 Kurtkalar", callback_data="cat_Kurtka")
+            InlineKeyboardButton(text="👔 Svitirlar & Polo", callback_data="cat_Svitir"),
+            InlineKeyboardButton(text="👖 Shimlar & Trikolar", callback_data="cat_Shim")
         ],
         [
-            InlineKeyboardButton(text="🧣 Paltolar", callback_data="cat_Palto"),
-            InlineKeyboardButton(text="👖 Shimlar", callback_data="cat_Shim")
+            InlineKeyboardButton(text="👶 Bolalar kiyimlari", callback_data="cat_Bolalar"),
+            InlineKeyboardButton(text="👟 Poyabzal & Tapichka", callback_data="cat_Oyoq kiyim")
         ],
         [
-            InlineKeyboardButton(text="🧢 Kepkalar", callback_data="cat_Kepka"),
-            InlineKeyboardButton(text="🧦 Paypoqlar", callback_data="cat_Paypoq")
+            InlineKeyboardButton(text="🛏️ Uy tekstili & Pijama", callback_data="cat_Uy tekstili"),
+            InlineKeyboardButton(text="💰 Hamyonbop (<=100 ming)", callback_data="filter_hamyonbop")
         ],
         [
-            InlineKeyboardButton(text="🩲 Ichki kiyimlar", callback_data="cat_Ichki kiyim")
-        ],
-        [
+            InlineKeyboardButton(text="✨ AI Stilist (To'liq Komplekt)", callback_data="open_stylist"),
             InlineKeyboardButton(text="🛒 Savatchaga o'tish", callback_data="open_cart")
         ]
     ]
@@ -195,3 +194,33 @@ def get_channel_buy_button(product_id: int, bot_username: str = "Markazsavdo00_b
         [InlineKeyboardButton(text="🛍️ Hoziroq xarid qilish (Lichka)", url=f"https://t.me/{clean_bot}?start=buy_{product_id}")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_stylist_keyboard() -> InlineKeyboardMarkup:
+    """AI Stilist bo'limlari: Ayol, Erkak, Bolalar va Hamyonbop"""
+    buttons = [
+        [
+            InlineKeyboardButton(text="👗 Ayollar komplekti", callback_data="stylist_ayol"),
+            InlineKeyboardButton(text="👔 Erkaklar komplekti", callback_data="stylist_erkak")
+        ],
+        [
+            InlineKeyboardButton(text="👶 Bolalar komplekti", callback_data="stylist_bolalar"),
+            InlineKeyboardButton(text="💰 Hamyonbop to'plam", callback_data="filter_hamyonbop")
+        ],
+        [
+            InlineKeyboardButton(text="🔙 Asosiy katalog", callback_data="p_cats")
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_outfit_keyboard(product_ids: list) -> InlineKeyboardMarkup:
+    """Komplektni xarid qilish va saralash tugmalari"""
+    buttons = []
+    # Agar 1 dan ortiq mahsulot bo'lsa, har birini tanlash tugmasi
+    for pid in product_ids[:3]:
+        buttons.append([InlineKeyboardButton(text=f"🛍️ #{pid}-tovarni xarid qilish", callback_data=f"fast_buy_{pid}")])
+    buttons.append([
+        InlineKeyboardButton(text="✨ Boshqa komplekt tanlash", callback_data="open_stylist"),
+        InlineKeyboardButton(text="🔙 Katalog", callback_data="p_cats")
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+

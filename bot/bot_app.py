@@ -62,10 +62,14 @@ from services.media_input_service import (
     VOICE_TOO_LONG_MSG, PHOTO_NO_STOCK_MSG
 )
 from services.channel_service import ChannelService
+from services.loyalty_service import LoyaltyService
+from services.stylist_service import StylistService
+from services.recovery_service import RecoveryService
 from bot.keyboards import (
     get_main_menu, get_category_keyboard, get_report_periods_keyboard,
     get_order_action_keyboard, get_order_approval_keyboard, get_phone_request_keyboard, get_location_request_keyboard,
-    get_channel_buy_button, get_product_card_keyboard, get_cart_keyboard, get_review_stars_keyboard
+    get_channel_buy_button, get_product_card_keyboard, get_cart_keyboard, get_review_stars_keyboard,
+    get_stylist_keyboard, get_outfit_keyboard
 )
 from utils.logger import log_bot_error, BOT_LOG_FILE
 
@@ -579,22 +583,73 @@ async def handle_promos_menu(message: types.Message):
         reply_markup=get_main_menu(is_admin=user_id in ADMIN_TELEGRAM_IDS, cart_count=cart_count)
     )
 
-# Sotuvchi bilan bog'lanish
-@dp.message(F.text == "📞 Sotuvchi bilan bog'lanish")
+# Do'kon Egasi va Sotuvchi bilan bog'lanish
+@dp.message(F.text.in_(["📞 Do'kon Egasi (Mansur aka)", "📞 Sotuvchi bilan bog'lanish", "📞 Bog'lanish", "📞 Aloqa"]))
 async def handle_contact_seller_info(message: types.Message):
     address_val = StoreSettingsManager.get_setting("address")
-    address_text = address_val if address_val else "Buni egasidan so'rab aytaman"
+    address_text = address_val if address_val else "Ingichka shaharchasi, Markaziy savdo majmuasi"
     await safe_send(
         chat_id=message.chat.id,
         text=(
-            f"📞 **'{STORE_NAME}' Bilan Aloqa:**\n\n"
+            f"👑 **'{STORE_NAME}' Do'kon Egasi va Ma'muriyati:**\n\n"
+            f"👤 **Boshliq:** Mansur Radjabov (@radjabovmansur)\n"
+            f"📱 **Telefon:** `+998 33 261-09-28` / `{STORE_PHONE}`\n"
             f"📍 **Manzil:** {address_text}\n"
-            f"📱 **Telefon:** `{STORE_PHONE}`\n"
             f"🕒 **Ish vaqti:** {WORKING_HOURS}\n"
-            f"📢 **Rasmiy Telegram kanal:** {CHANNEL_USERNAME} ({CHANNEL_URL})\n\n"
-            f"Har qanday savolingiz bo'lsa, bemalol matn yoki ovozli xabar yuborishingiz mumkin 😊"
+            f"📢 **Rasmiy Kanal:** {CHANNEL_USERNAME} ({CHANNEL_URL})\n\n"
+            f"Do'konimiz bo'yicha har qanday maxsus buyurtma yoki savollar uchun bemalol yozishingiz mumkin 😊"
         )
     )
+
+# Rasmiy Savdo Kanali tugmasi
+@dp.message(F.text.in_(["📢 @markazsavdo Kanali", "📢 Rasmiy Kanal", "📢 Kanal"]))
+@dp.message(Command("kanal"))
+async def handle_channel_button(message: types.Message):
+    await safe_send(
+        chat_id=message.chat.id,
+        text=(
+            f"📢 **MarkazSavdo Rasmiy Telegram Kanali!**\n\n"
+            f"Do'konimizning eng so'nggi kiyim va poyabzal kolleksiyalari, video sharhlar "
+            f"hamda maxsus chegirmalar aynan bizning kanalda e'lon qilib boriladi:\n\n"
+            f"👉 **Kanal:** [t.me/markazsavdo]({CHANNEL_URL})\n\n"
+            f"💡 *Maslahat:* Kanaldagi har qanday tovar postini ushbu botga forward qilib yuborsangiz, "
+            f"bot uni avtomatik aniqlab 1-bosishda xarid qilish imkonini beradi!"
+        ),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="📢 @markazsavdo kanaliga o'tish", url=CHANNEL_URL)
+        ]])
+    )
+
+# VIP Keshbek / Sodiqlik tizimi
+@dp.message(F.text.in_(["💎 VIP Keshbek", "💎 Keshbek", "💎 VIP Cashback"]))
+@dp.message(Command("loyalty"))
+@dp.message(Command("keshbek"))
+async def handle_loyalty_dashboard(message: types.Message):
+    user_id = message.from_user.id
+    customer = DatabaseManager.get_customer(user_id)
+    user_name = customer.get("full_name", message.from_user.first_name) if customer else message.from_user.first_name
+    card_text = LoyaltyService.format_loyalty_card(user_id, user_name)
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🛍️ Ballarni sarflash (Katalog)", callback_data="p_cats"),
+            InlineKeyboardButton(text="🛒 Savatcham", callback_data="open_cart")
+        ]
+    ])
+    await safe_send(message.chat.id, card_text, reply_markup=kb)
+
+# AI Stilist & Total Look
+@dp.message(F.text.in_(["✨ AI Stilist (Komplekt)", "✨ AI Stilist", "✨ Komplekt"]))
+@dp.message(Command("stylist"))
+@dp.message(Command("komplekt"))
+async def handle_stylist_menu(message: types.Message):
+    text = (
+        "✨ **MarkazSavdo AI Stilist & Total Look!**\n\n"
+        "Bizning sun'iy intellekt omborimizdagi tovarlardan bir-biriga mukammal mos keluvchi "
+        "3-talik kiyim to'plamlarini (Total Look) maxsus **5% komplekt chegirmasi** bilan saralab beradi!\n\n"
+        "O'zingizga kerakli bo'limni tanlang 👇"
+    )
+    await safe_send(message.chat.id, text, reply_markup=get_stylist_keyboard())
+
 
 
 
@@ -1183,7 +1238,10 @@ async def handle_product_nav(callback: types.CallbackQuery):
     parts = callback.data.split("_")
     cat_name = parts[2]
     idx = int(parts[3])
-    prods = DatabaseManager.get_products(category=cat_name, in_stock_only=True)
+    if cat_name == "Hamyonbop":
+        prods = DatabaseManager.get_products(max_price=100000, in_stock_only=True)
+    else:
+        prods = DatabaseManager.get_products(category=cat_name, in_stock_only=True)
 
     if not prods or idx < 0 or idx >= len(prods):
         await callback.answer("Boshqa tovar yo'q", show_alert=False)
@@ -1198,6 +1256,50 @@ async def handle_product_nav(callback: types.CallbackQuery):
         await callback.message.edit_text(text, reply_markup=kb)
     except Exception:
         pass
+    await callback.answer()
+
+@dp.callback_query(F.data == "open_stylist")
+async def handle_open_stylist_cb(callback: types.CallbackQuery):
+    text = (
+        "✨ **MarkazSavdo AI Stilist & Total Look!**\n\n"
+        "Bizning intellektual stilistimiz ombordagi tovarlardan bir-biriga mos keluvchi "
+        "3-talik kiyim to'plamlarini (Total Look) maxsus **5% chegirma** bilan taqdim etadi!\n\n"
+        "O'zingizga qiziq bo'limni tanlang 👇"
+    )
+    try:
+        await callback.message.edit_text(text, reply_markup=get_stylist_keyboard())
+    except Exception:
+        await callback.message.answer(text, reply_markup=get_stylist_keyboard())
+    await callback.answer()
+
+@dp.callback_query(F.data.in_(["stylist_ayol", "stylist_erkak", "stylist_bolalar"]))
+async def handle_stylist_curate_cb(callback: types.CallbackQuery):
+    g_map = {"stylist_ayol": "ayol", "stylist_erkak": "erkak", "stylist_bolalar": "bolalar"}
+    gender = g_map.get(callback.data, "ayol")
+    outfit = StylistService.curate_outfit(gender)
+    text = StylistService.format_outfit_card(outfit)
+    p_ids = [p["id"] for p in outfit.get("items", [])]
+    kb = get_outfit_keyboard(p_ids)
+    try:
+        await callback.message.edit_text(text, reply_markup=kb)
+    except Exception:
+        await callback.message.answer(text, reply_markup=kb)
+    await callback.answer()
+
+@dp.callback_query(F.data == "filter_hamyonbop")
+async def handle_filter_hamyonbop_cb(callback: types.CallbackQuery):
+    prods = DatabaseManager.get_products(max_price=100000, in_stock_only=True)
+    if not prods:
+        await callback.answer("Hozirda 100 000 so'mdan arzon tovarlar qolmagan.", show_alert=True)
+        return
+    prod = prods[0]
+    total = len(prods)
+    text = format_product_card(prod, "Hamyonbop", 0, total)
+    kb = get_product_card_keyboard(prod["id"], "Hamyonbop", 0, total)
+    try:
+        await callback.message.edit_text(text, reply_markup=kb)
+    except Exception:
+        await callback.message.answer(text, reply_markup=kb)
     await callback.answer()
 
 @dp.callback_query(F.data == "p_cats")
@@ -1849,6 +1951,43 @@ async def handle_private_chat(message: types.Message):
         await safe_send(message.chat.id, waitlist_resp)
         return
 
+    # 000. Telegram Kanalidan forward qilingan tovar postini aniqlash (Channel Post Forward Detector)
+    is_fwd = bool(
+        getattr(message, "forward_origin", None) or
+        getattr(message, "forward_from_chat", None) or
+        getattr(message, "forward_sender_name", None) or
+        getattr(message, "forward_date", None)
+    )
+    if is_fwd:
+        fwd_prod = OrderMatcher.match_product(text)
+        if fwd_prod:
+            set_pending_order(user_id, fwd_prod)
+            fwd_text_card = (
+                f"📢 **@markazsavdo kanalimizdan tanlangan tovar:**\n\n"
+                f"🛍️ **{fwd_prod['name']}**\n"
+                f"📏 **O'lcham:** {fwd_prod['size']} | **Rang:** {fwd_prod['color']}\n"
+                f"💰 **Narxi:** **{fwd_prod['sale_price']:,.0f} so'm**\n"
+                f"📊 **Omborda:** {fwd_prod['stock_quantity']} dona mavjud\n\n"
+                f"Quyidagi tugmalar orqali hoziroq buyurtma berishingiz yoki savatga qo'shishingiz mumkin 👇"
+            )
+            fwd_kb = InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="⚡️ Hoziroq xarid qilish", callback_data=f"fast_buy_{fwd_prod['id']}"),
+                    InlineKeyboardButton(text="🛒 Savatga qo'shish", callback_data=f"cart_add_{fwd_prod['id']}")
+                ],
+                [
+                    InlineKeyboardButton(text="📢 @markazsavdo kanaliga o'tish", url=CHANNEL_URL)
+                ]
+            ])
+            if fwd_prod.get("photo_id"):
+                try:
+                    await bot.send_photo(chat_id=message.chat.id, photo=fwd_prod["photo_id"], caption=fwd_text_card, parse_mode="Markdown", reply_markup=fwd_kb)
+                    return
+                except Exception:
+                    pass
+            await safe_send(message.chat.id, fwd_text_card, reply_markup=fwd_kb)
+            return
+
     # === TASK 3: Faol buyurtma oqimi holat mashinasi (State Machine) ===
     if OrderFlowService.has_active_flow(message.chat.id):
         step_res = OrderFlowService.process_step(
@@ -1970,6 +2109,51 @@ async def handle_private_chat(message: types.Message):
 
     if any(w in text_lower for w in ["promokod", "promokodlar", "chegirma kodi", "aksiyalar"]):
         await message.answer(PromoManager.get_active_promos_display())
+        return
+
+    # VIP Keshbek tabiiy so'rovi
+    if any(w in text_lower for w in ["keshbek", "ballarim", "bonuslarim", "vip karta", "loyalty", "qancha ballim bor"]):
+        card_text = LoyaltyService.format_loyalty_card(user_id, user_name)
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="🛍️ Ballarni sarflash (Katalog)", callback_data="p_cats"),
+            InlineKeyboardButton(text="🛒 Savatcham", callback_data="open_cart")
+        ]])
+        await safe_send(message.chat.id, card_text, reply_markup=kb)
+        return
+
+    # AI Stilist tabiiy so'rovi
+    if any(w in text_lower for w in ["stilist", "komplekt", "kiyim toplami", "kiyim to'plami", "obraz", "total look"]):
+        text_st = (
+            "✨ **MarkazSavdo AI Stilist & Total Look!**\n\n"
+            "Bizning intellektual stilistimiz ombordagi tovarlardan bir-biriga mos keluvchi "
+            "3-talik kiyim to'plamlarini (Total Look) maxsus **5% chegirma** bilan saralab beradi!\n\n"
+            "O'zingizga kerakli bo'limni tanlang 👇"
+        )
+        await safe_send(message.chat.id, text_st, reply_markup=get_stylist_keyboard())
+        return
+
+    # Rasmiy savdo kanali tabiiy so'rovi
+    if any(w in text_lower for w in ["markazsavdo kanali", "telegram kanal", "kanalingiz"]):
+        await safe_send(
+            message.chat.id,
+            f"📢 **MarkazSavdo Rasmiy Telegram Kanali!**\n\n"
+            f"👉 **Kanal:** [t.me/markazsavdo]({CHANNEL_URL})\n\n"
+            f"Kanaldagi yangi tovarlarimizni kuzatib boring!",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="📢 @markazsavdo kanaliga o'tish", url=CHANNEL_URL)
+            ]])
+        )
+        return
+
+    # Mansur aka / Do'kon egasi tabiiy so'rovi
+    if any(w in text_lower for w in ["mansur aka", "mansur radjabov", "dokon egasi", "do'kon egasi"]):
+        await safe_send(
+            message.chat.id,
+            f"👑 **'{STORE_NAME}' Do'kon Egasi:**\n\n"
+            f"👤 **Boshliq:** Mansur Radjabov (@radjabovmansur)\n"
+            f"📱 **Telefon:** `+998 33 261-09-28`\n"
+            f"📢 **Kanal:** @markazsavdo ({CHANNEL_URL})"
+        )
         return
 
     # Admin yangi tovar matnini yuborgan bo'lsa
@@ -2260,7 +2444,7 @@ import subprocess
 import collections
 from datetime import datetime
 
-CURRENT_VERSION = "v5.0-global-retail-flagship"
+CURRENT_VERSION = "v6.0-billion-dollar-flagship"
 PING_HISTORY = collections.deque(maxlen=30)
 
 def get_current_commit() -> str:

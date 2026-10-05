@@ -243,6 +243,15 @@ Sen — "{STORE_NAME}" do'konining professional va samimiy BOSH SOTUVCHI-MASLAHA
             self.conversations[cid].append({"role": "assistant", "content": obj_ans})
             return obj_ans
 
+        # Qoida 5, 6 & 10: Jami summani kod hisoblaydi (Facts & Money Math in Code - Never by LLM)
+        from services.order_matcher import OrderMatcher
+        quote_reply = OrderMatcher.calculate_quote(user_message)
+        if quote_reply:
+            quote_reply = SalesIntelligence.sanitize_emoji_count(quote_reply, max_emojis=1)
+            self.conversations[cid].append({"role": "assistant", "content": quote_reply})
+            return quote_reply
+
+
         # 4. Google Gemini chaqiruvi (Haqiqiy Gemini 3.5/3.6/3.8 Flash modeli)
         reply = None
         if self.gemini_api_key and not getattr(self, '_gemini_invalid', False):

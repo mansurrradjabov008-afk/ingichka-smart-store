@@ -935,7 +935,7 @@ def build_inventory():
 
         ws.merge_cells("A2:P2")
         sub_cell = ws["A2"]
-        sub_cell.value = "Yaratilgan sana: 05.10.2026 | Kanal: @markazsavdo_7 | Do'kon egasi: Mansur Radjabov"
+        sub_cell.value = "Yaratilgan sana: 05.10.2026 | Kanal: @markazsavdo | Do'kon egasi: Mansur Radjabov"
         sub_cell.font = Font(name="Calibri", size=10, italic=True, color="595959")
         sub_cell.alignment = Alignment(horizontal="center", vertical="center")
 

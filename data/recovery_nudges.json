@@ -1,0 +1,14 @@
+{
+  "9999902_cart": {
+    "chat_id": 9999902,
+    "context": "cart",
+    "message": "Savatingizda tovarlar qolib ketdi!",
+    "nudged_at": "2026-10-05T21:06:23.981340"
+  },
+  "9999902": {
+    "chat_id": 9999902,
+    "context": "cart",
+    "message": "Savatingizda tovarlar qolib ketdi!",
+    "nudged_at": "2026-10-05T21:06:23.981340"
+  }
+}
