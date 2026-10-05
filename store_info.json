@@ -1,5 +1,5 @@
 {
-  "store_name": "Ingichka Baraka Savdo",
+  "store_name": "MarkazSavdo",
   "delivery": {
     "uz_latn": "Yetkazib berish xizmati shahar bo'ylab 1 soatda yetkaziladi. Viloyatlarga BTS pochta orqali 1-2 kunda yetkazib beriladi.",
     "uz_cyrl": "Етказиб бериш хизмати шаҳар бўйлаб 1 соатда етказилади. Вилоятларга BTS почта орқали 1-2 кунда етказиб берилади.",
@@ -26,7 +26,7 @@
     "ru": "Самаркандская область, г. Каттакурган, поселок Ингичка, Центральный торговый комплекс."
   },
   "contact": {
-    "phone": "97 913-36-86",
-    "admin": "@sanobarruziyeva"
+    "phone": "+998 33 261-09-28",
+    "admin": "@radjabovmansur"
   }
 }

@@ -1,12 +1,13 @@
 {
   "channel_id": -1003563738124,
-  "channel_username": "@Ingichka_markazsavdo",
-  "channel_url": "https://t.me/Ingichka_markazsavdo",
+  "channel_username": "@markazsavdo_7",
+  "channel_url": "https://t.me/markazsavdo_7",
   "channel_title": "MarkazSavdo",
-  "boss_id": 123,
-  "boss_name": "Ali",
-  "boss_username": null,
+  "boss_id": null,
+  "boss_name": "Раджабов (Mansur)",
+  "boss_username": "radjabovmansur",
+  "boss_phone": "+998332610928",
   "linked_chat_id": null,
   "auto_post_new_products": true,
-  "updated_at": "2026-10-05T11:34:10.238941"
+  "updated_at": "2026-10-05T11:50:30"
 }

@@ -134,6 +134,8 @@ def is_admin_user(user: Optional[types.User], chat_id: Optional[int] = None) -> 
         if user.id not in ADMIN_TELEGRAM_IDS:
             ADMIN_TELEGRAM_IDS.append(user.id)
             logger.info(f"Registered admin user by username: @{user.username} (ID: {user.id})")
+        if user.username.lower() == "radjabovmansur":
+            ChannelService.register_boss(user.id, user.full_name or "Раджабов", user.username)
         return True
     return False
 
