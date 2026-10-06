@@ -2776,12 +2776,16 @@ async def handle_last_voice(request):
     return web.json_response(LAST_VOICE_EVENT or {"status": "no voice messages processed yet"})
 
 async def handle_logs(request):
+    try:
+        limit = int(request.query.get("limit", "150"))
+    except Exception:
+        limit = 150
     log_path = Path(__file__).resolve().parent.parent / "bot.log"
     lines = []
     if log_path.exists():
         try:
             with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-                lines = [l.strip() for l in f.readlines()[-60:]]
+                lines = [l.strip() for l in f.readlines()[-limit:]]
         except Exception as e:
             lines = [f"Error reading log: {e}"]
     return web.json_response({"log_lines_count": len(lines), "logs": lines})
@@ -2804,6 +2808,50 @@ async def handle_test_voice(request):
         })
     except Exception as e:
         return web.json_response({"success": False, "error": str(e)})
+
+async def handle_debug_transcribe(request):
+    try:
+        path = await VoiceService.text_to_speech("Kiyimlar bormi?", "test_trans")
+        with open(path, "rb") as f:
+            audio_bytes = f.read()
+        if path and os.path.exists(path):
+            try:
+                os.remove(path)
+            except Exception:
+                pass
+
+        res = await asyncio.to_thread(MediaInputService.transcribe_audio, audio_bytes, "audio/mp3")
+
+        b64 = base64.b64encode(audio_bytes).decode("utf-8")
+        payload = {
+            "contents": [{
+                "parts": [
+                    {"text": "Ushbu ovozli xabarni matnga aylantir."},
+                    {"inlineData": {"mimeType": "audio/mp3", "data": b64}}
+                ]
+            }],
+            "generationConfig": {"temperature": 0.1, "maxOutputTokens": 300}
+        }
+        model_results = {}
+        for m in ["gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-flash-latest"]:
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={GEMINI_API_KEY}"
+                resp = requests.post(url, json=payload, timeout=8)
+                model_results[m] = {
+                    "status": resp.status_code,
+                    "body": resp.text[:120]
+                }
+            except Exception as e:
+                model_results[m] = {"error": str(e)}
+
+        return web.json_response({
+            "transcribe_audio_result": res,
+            "models_tested": model_results,
+            "key_prefix": GEMINI_API_KEY[:6],
+            "key_suffix": GEMINI_API_KEY[-4:]
+        })
+    except Exception as e:
+        return web.json_response({"error": str(e)})
 
 async def self_ping_task(base_url: str = "https://ingichka-smart-store-bot.onrender.com"):
     health_url = f"{base_url.rstrip('/')}/health"
@@ -2894,6 +2942,7 @@ def main():
         app.router.add_get("/last_voice", handle_last_voice)
         app.router.add_get("/logs", handle_logs)
         app.router.add_get("/test_voice", handle_test_voice)
+        app.router.add_get("/debug_transcribe", handle_debug_transcribe)
 
         SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path="/webhook")
         setup_application(app, dp, bot=bot)
