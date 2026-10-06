@@ -202,7 +202,7 @@ REAL_PRODUCTS = [
         "incoming_date": "04.10.2026",
         "status": "Kam qolgan",
         "aliases": ["bolalar trikosi", "qora bolalar shimi", "kichik triko"],
-        "image_url": "https://images.unsplash.com/photo-1519725392576-96a84f3eb48c?w=600"
+        "image_url": "https://images.unsplash.com/photo-1541099649105-f69ad21f3246?w=600"
     },
     {
         "id": 10,
@@ -402,7 +402,7 @@ REAL_PRODUCTS = [
         "incoming_date": "04.10.2026",
         "status": "Mavjud",
         "aliases": ["chaqaloqlar konverti", "ryukzak konvert", "bolalar sumkasi", "chaqaloq konverti"],
-        "image_url": "https://images.unsplash.com/photo-1519725392576-96a84f3eb48c?w=600"
+        "image_url": "https://images.unsplash.com/photo-1522771739844-6a9f6d5f14af?w=600"
     },
     {
         "id": 20,
@@ -462,7 +462,7 @@ REAL_PRODUCTS = [
         "incoming_date": "04.10.2026",
         "status": "Mavjud",
         "aliases": ["ogil bolalar trikosi", "adidas bolalar trikosi", "kichik triko", "5 yosh triko"],
-        "image_url": "https://images.unsplash.com/photo-1519725392576-96a84f3eb48c?w=600"
+        "image_url": "https://images.unsplash.com/photo-1503944583220-79d8926ad5e2?w=600"
     },
     {
         "id": 23,
@@ -482,7 +482,7 @@ REAL_PRODUCTS = [
         "incoming_date": "04.10.2026",
         "status": "Mavjud",
         "aliases": ["chaqaloq trikosi", "1 yosh triko", "2 yosh triko", "kichkintoy trikosi"],
-        "image_url": "https://images.unsplash.com/photo-1519725392576-96a84f3eb48c?w=600"
+        "image_url": "https://images.unsplash.com/photo-1622290291468-a28f7a7dc6a8?w=600"
     },
     {
         "id": 24,
@@ -662,7 +662,7 @@ REAL_PRODUCTS = [
         "incoming_date": "04.10.2026",
         "status": "Mavjud",
         "aliases": ["jinsi troyka", "troyka komplekt", "bolalar troykasi", "bolalar jinsi komplekti"],
-        "image_url": "https://images.unsplash.com/photo-1519725392576-96a84f3eb48c?w=600"
+        "image_url": "https://images.unsplash.com/photo-1576995853123-5a10305d93c0?w=600"
     },
     {
         "id": 33,
@@ -782,7 +782,7 @@ REAL_PRODUCTS = [
         "incoming_date": "04.10.2026",
         "status": "Mavjud",
         "aliases": ["qizlar pijamasi", "pijama komplekt", "uy pijamasi", "bolalar pijamasi"],
-        "image_url": "https://images.unsplash.com/photo-1519725392576-96a84f3eb48c?w=600"
+        "image_url": "https://images.unsplash.com/photo-1596870230751-ebdfce98ec42?w=600"
     },
     {
         "id": 39,
@@ -802,7 +802,7 @@ REAL_PRODUCTS = [
         "incoming_date": "04.10.2026",
         "status": "Mavjud",
         "aliases": ["ogil bolalar pijamasi", "ogil bola pijama", "bolalar uy kiyimi"],
-        "image_url": "https://images.unsplash.com/photo-1519725392576-96a84f3eb48c?w=600"
+        "image_url": "https://images.unsplash.com/photo-1519238263530-99bdd11df2ea?w=600"
     },
     {
         "id": 40,

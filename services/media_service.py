@@ -4,18 +4,43 @@ Task 2 Requirements 1 & 2:
 1. When the bot recommends or the customer asks about a specific product,
    send its photo (image_url) with a caption: name, price, available sizes.
    If several products match, send max 3 as a media group.
-2. If image_url is broken or missing, send the text only. Never fail.
+2. If image_url is broken or missing, fallback to resilient byte download / backup image.
+   Never fail silently or drop to text-only when photos can be shown.
 """
 
 import asyncio
 import logging
 from typing import List, Dict, Any, Optional
+import aiohttp
 from aiogram import Bot, types
-from aiogram.types import InputMediaPhoto, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InputMediaPhoto, InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
 
 from utils.logger import log_bot_error
 
 logger = logging.getLogger(__name__)
+
+# In-memory image bytes cache to avoid duplicate network fetches
+_IMAGE_BYTES_CACHE: Dict[str, bytes] = {}
+DEFAULT_BACKUP_IMAGE_URL = "https://images.unsplash.com/photo-1522771739844-6a9f6d5f14af?w=600"
+
+async def fetch_image_bytes(url: Optional[str]) -> Optional[bytes]:
+    """Fetch image bytes directly with desktop headers and cache. Never raises."""
+    if not url or not isinstance(url, str) or not url.startswith("http"):
+        return None
+    if url in _IMAGE_BYTES_CACHE:
+        return _IMAGE_BYTES_CACHE[url]
+    try:
+        timeout = aiohttp.ClientTimeout(total=8.0)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}) as resp:
+                if resp.status == 200:
+                    data = await resp.read()
+                    if len(data) > 500:
+                        _IMAGE_BYTES_CACHE[url] = data
+                        return data
+    except Exception as err:
+        logger.warning(f"Direct image fetch failed for {url}: {err}")
+    return None
 
 def format_product_caption(prod: Dict[str, Any]) -> str:
     """Format single product caption with name, price, available sizes, material, and sales prompt (Task 4: Max 1 emoji, urgency stock <= 3)"""
@@ -128,14 +153,14 @@ async def send_product_presentation(
     - If 1 product: sends single photo with caption and 1-click buy/cart buttons.
     - If several products: sends max 3 as media group with rich group caption,
       followed by consultative variant suggestions with individual 1-click buy buttons.
-    - If image_url is broken or missing: sends text only. Never fails.
+    - Multi-layer resilience: URL delivery -> Direct Byte Upload fallback -> Individual photo fallback -> Safe text fallback.
     """
     if not products:
         return False
 
     prods_to_send = products[:3]
 
-    # Helper for sending safe text fallback
+    # Helper for sending safe text fallback as last resort
     async def _send_text_fallback():
         try:
             if len(prods_to_send) == 1:
@@ -165,29 +190,46 @@ async def send_product_presentation(
             caption = format_product_caption(p)
             kb = reply_markup if reply_markup is not None else get_single_product_keyboard(p)
 
+            sent = False
+            # Try 1: URL / photo_id orqali yuborish
             if img_url and isinstance(img_url, str) and (img_url.startswith("http") or img_url.startswith("AgAC")):
                 try:
                     await asyncio.wait_for(
                         bot.send_photo(chat_id=chat_id, photo=img_url, caption=caption, parse_mode="Markdown", reply_markup=kb),
                         timeout=12.0
                     )
-                    return True
+                    sent = True
                 except Exception as e:
-                    # Broken URL or Telegram photo error -> Fallback to text only
-                    log_bot_error(chat_id, f"Broken image_url or photo send failed: {e}. Falling back to text.", exc=e)
-                    await _send_text_fallback()
-                    return True
+                    log_bot_error(chat_id, f"URL photo send failed: {e}. Trying direct byte upload fallback...", exc=e)
+
+            # Try 2: To'g'ridan-to'g'ri baytlar orqali yuklash (Telegram curl xatoliklarini aylanib o'tadi)
+            if not sent and img_url and isinstance(img_url, str) and img_url.startswith("http"):
+                try:
+                    raw_bytes = await fetch_image_bytes(img_url)
+                    if not raw_bytes:
+                        raw_bytes = await fetch_image_bytes(DEFAULT_BACKUP_IMAGE_URL)
+                    if raw_bytes:
+                        buf_file = BufferedInputFile(raw_bytes, filename=f"product_{p.get('id', 1)}.jpg")
+                        await asyncio.wait_for(
+                            bot.send_photo(chat_id=chat_id, photo=buf_file, caption=caption, parse_mode="Markdown", reply_markup=kb),
+                            timeout=15.0
+                        )
+                        sent = True
+                except Exception as byte_err:
+                    log_bot_error(chat_id, f"Byte upload photo send failed: {byte_err}", exc=byte_err)
+
+            if sent:
+                return True
             else:
-                # Missing image_url -> text only
                 await _send_text_fallback()
                 return True
 
-        # 2. Bir nechta tovar bo'lsa (max 3 ta media group)
-        media_items = []
+        # 2. Bir nechta tovar bo'lsa (max 3 ta)
         group_caption = format_multi_product_caption(prods_to_send)
         if len(group_caption) > 1000:
             group_caption = group_caption[:990] + "..."
 
+        media_items = []
         for idx, p in enumerate(prods_to_send):
             img_url = p.get("image_url") or p.get("photo_id")
             if img_url and isinstance(img_url, str) and (img_url.startswith("http") or img_url.startswith("AgAC")):
@@ -195,38 +237,89 @@ async def send_product_presentation(
                 pm = "Markdown" if idx == 0 else None
                 media_items.append(InputMediaPhoto(media=img_url, caption=cap, parse_mode=pm))
 
+        group_sent = False
+
+        # Attempt 1: URL orqali Media Group yuborish
         if len(media_items) >= 2:
             try:
                 await asyncio.wait_for(
                     bot.send_media_group(chat_id=chat_id, media=media_items),
                     timeout=15.0
                 )
-
-                # Media group muvaffaqiyatli ketgandan so'ng, xarid tugmalari va boshqa turlari taklifini yuborish
-                cat_name = prods_to_send[0].get("category", "")
-                from services.order_matcher import OrderMatcher
-                var_info = OrderMatcher.get_category_variants(cat_name, exclude_ids=[p["id"] for p in prods_to_send]) if suggest_variants else None
-
-                if var_info and var_info.get("other_variants"):
-                    kb = get_multi_product_action_keyboard(prods_to_send, category=var_info["category_key"], total_cat_count=var_info["total_count"])
-                    consultative_msg = var_info["summary_text"]
-                else:
-                    kb = reply_markup if reply_markup is not None else get_multi_product_action_keyboard(prods_to_send, category=cat_name)
-                    consultative_msg = "Yuqoridagi tovarlardan birini xarid qilish yoki savatga qo'shish uchun quyidagi tugmalarni bosing 👇"
-
-                if safe_send_fn:
-                    await safe_send_fn(chat_id=chat_id, text=consultative_msg, reply_markup=kb)
-                else:
-                    await bot.send_message(chat_id=chat_id, text=consultative_msg, reply_markup=kb)
-
-                return True
+                group_sent = True
             except Exception as e:
-                log_bot_error(chat_id, f"Media group send failed: {e}. Falling back to text.", exc=e)
-                await _send_text_fallback()
-                return True
+                log_bot_error(chat_id, f"Media group URL send failed: {e}. Trying direct byte upload fallback...", exc=e)
+
+        # Attempt 2: Direct byte upload (BufferedInputFile) media group
+        if not group_sent:
+            buffered_media = []
+            for idx, p in enumerate(prods_to_send):
+                url = p.get("image_url") or p.get("photo_id")
+                raw_bytes = await fetch_image_bytes(url)
+                if not raw_bytes:
+                    raw_bytes = await fetch_image_bytes(DEFAULT_BACKUP_IMAGE_URL)
+                if raw_bytes:
+                    cap = group_caption if len(buffered_media) == 0 else None
+                    pm = "Markdown" if len(buffered_media) == 0 else None
+                    buf = BufferedInputFile(raw_bytes, filename=f"product_{p.get('id', idx)}.jpg")
+                    buffered_media.append(InputMediaPhoto(media=buf, caption=cap, parse_mode=pm))
+
+            if len(buffered_media) >= 2:
+                try:
+                    await asyncio.wait_for(
+                        bot.send_media_group(chat_id=chat_id, media=buffered_media),
+                        timeout=18.0
+                    )
+                    group_sent = True
+                except Exception as b_mg_err:
+                    log_bot_error(chat_id, f"Buffered media group send failed: {b_mg_err}. Trying individual photo fallback...", exc=b_mg_err)
+
+        # Attempt 3: Alohida bittalab rasm yuborish fallback
+        if not group_sent:
+            any_photo_sent = False
+            for idx, p in enumerate(prods_to_send):
+                url = p.get("image_url") or p.get("photo_id")
+                raw_bytes = await fetch_image_bytes(url)
+                if not raw_bytes:
+                    raw_bytes = await fetch_image_bytes(DEFAULT_BACKUP_IMAGE_URL)
+                cap = format_product_caption(p)
+                p_kb = get_single_product_keyboard(p) if reply_markup is None else None
+                if raw_bytes:
+                    try:
+                        buf = BufferedInputFile(raw_bytes, filename=f"product_{p.get('id', idx)}.jpg")
+                        await bot.send_photo(chat_id=chat_id, photo=buf, caption=cap, parse_mode="Markdown", reply_markup=p_kb)
+                        any_photo_sent = True
+                    except Exception as ind_err:
+                        log_bot_error(chat_id, f"Individual photo send failed: {ind_err}", exc=ind_err)
+            if any_photo_sent:
+                group_sent = True
+
+        if group_sent:
+            # Media group yoki rasmlar muvaffaqiyatli ketdi!
+            # Endi xarid tugmalari va variantlar taklifini yuborish
+            cat_name = prods_to_send[0].get("category", "")
+            from services.order_matcher import OrderMatcher
+            var_info = OrderMatcher.get_category_variants(cat_name, exclude_ids=[p["id"] for p in prods_to_send]) if suggest_variants else None
+
+            if reply_markup is not None:
+                kb = reply_markup
+                consultative_msg = var_info["summary_text"] if (var_info and var_info.get("other_variants")) else "Yuqoridagi tovarlardan birini xarid qilish uchun quyidagi tugmalarni bosing 👇"
+            elif var_info and var_info.get("other_variants"):
+                kb = get_multi_product_action_keyboard(prods_to_send, category=var_info["category_key"], total_cat_count=var_info["total_count"])
+                consultative_msg = var_info["summary_text"]
+            else:
+                kb = get_multi_product_action_keyboard(prods_to_send, category=cat_name)
+                consultative_msg = "Yuqoridagi tovarlardan birini xarid qilish yoki savatga qo'shish uchun quyidagi tugmalarni bosing 👇"
+
+            if safe_send_fn:
+                await safe_send_fn(chat_id=chat_id, text=consultative_msg, reply_markup=kb)
+            else:
+                await bot.send_message(chat_id=chat_id, text=consultative_msg, reply_markup=kb)
+            return True
         else:
             await _send_text_fallback()
             return True
+
     except Exception as top_ex:
         log_bot_error(chat_id, f"send_product_presentation top error: {top_ex}", exc=top_ex)
         await _send_text_fallback()
