@@ -19,7 +19,7 @@ if sys.platform == "win32":
         pass
 
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, FSInputFile
 from aiogram.filters import CommandStart, Command
 from aiogram.enums import ChatType, ChatMemberStatus
 from aiogram.exceptions import TelegramBadRequest
@@ -1707,15 +1707,17 @@ async def handle_photo_message(message: types.Message):
         logger.error(f"Rasm bilan ishlashda xatolik: {e}")
         await safe_send(message.chat.id, PHOTO_API_FALLBACK_MSG)
 
-# 8.1 Ovozli xabarlar bilan ishlash (TASK 6: Voice and photo input)
+# 8.1 Ovozli xabarlar bilan ishlash (TASK 6: Voice and photo input + 20 yillik tajribali sotuvchi)
 @dp.message(F.voice | F.audio)
 async def handle_voice_message(message: types.Message):
     """
-    TASK 6: Ovozli xabarlar bilan ishlash.
+    TASK 6 & 20 YILLIK TAJRIBALI SOTUVCHI:
     1. Davomiylikni tekshirish (<= 60 soniya, aks holda qisqaroq xabar so'rash).
     2. Yuklab olish va transkripsiya qilish (Gemini yoki Whisper, o'zbek tili qo'llab-quvvatlanadi).
     3. Agar bo'sh yoki noaniq bo'lsa, qayta gapirish yoki yozishni so'rash.
-    4. Hech qanday ortiqcha narsa ko'rsatmasdan, oddiy xabar kabi qayta ishlash.
+    4. 20 yillik tajribaga ega Bosh Sotuvchi kabi muloqot qilish:
+       - O'zbek tilidagi jonli, yoqimli va mehmondo'st ovozli xabar (Voice Note) orqali javob qaytarish!
+       - Mahsulot rasmi, mavjud o'lchamlari va 1-bosishda xarid qilish tugmalarini chiqarish.
     5. Vaqtinchalik fayllarni tozalash va xatoliklarda xavfsiz javob qaytarish.
     """
     user_id = message.from_user.id if message.from_user else message.chat.id
@@ -1729,6 +1731,11 @@ async def handle_voice_message(message: types.Message):
 
     temp_path = None
     try:
+        try:
+            await bot.send_chat_action(chat_id=message.chat.id, action="record_voice")
+        except Exception:
+            pass
+
         voice_file_io = io.BytesIO()
         await bot.download(voice_obj, destination=voice_file_io)
         audio_bytes = voice_file_io.getvalue()
@@ -1769,12 +1776,87 @@ async def handle_voice_message(message: types.Message):
             await safe_send(message.chat.id, admin_reply)
             return
 
-        # Show nothing extra, then process the text exactly like a normal message
-        message.text = transcript
-        if message.chat.type == ChatType.PRIVATE:
-            await handle_private_chat(message)
+        # Xaridorning ovozli murojaati: 20 yillik tajribali sotuvchi muloqoti
+        customer = DatabaseManager.get_customer(user_id)
+        preferred_name = customer.get("preferred_name") if customer else None
+        user_name = clean_display_name(message.from_user.first_name, preferred_name) if message.from_user else "Mijoz"
+
+        bot_info = await bot.get_me()
+
+        # 1. AI Sotuvchidan 20 yillik tajribaga asoslangan samimiy javob olish
+        ai_reply = ai_brain.ask(
+            chat_id=message.chat.id,
+            user_message=transcript,
+            customer_name=user_name
+        )
+
+        # 2. Ovozli javob (Voice Note) yaratish va jo'natish
+        voice_path = None
+        try:
+            voice_path = await VoiceService.text_to_speech(
+                text=ai_reply,
+                filename_prefix=f"voice_reply_{user_id}",
+                voice=VoiceService.VOICE_FEMALE
+            )
+            if voice_path and os.path.exists(voice_path):
+                await bot.send_voice(
+                    chat_id=message.chat.id,
+                    voice=FSInputFile(voice_path),
+                    caption="🎙️ <b>20 yillik tajribali sotuvchi-maslahatchi javobi</b>",
+                    parse_mode="HTML"
+                )
+        except Exception as ve:
+            logger.warning(f"Voice note yuborishda ogohlantirish: {ve}")
+        finally:
+            if voice_path and os.path.exists(voice_path):
+                try:
+                    os.remove(voice_path)
+                except Exception:
+                    pass
+
+        # 3. Tovar so'ralgan bo'lsa, foto-taqdimot va xarid tugmasini chiqarish
+        matched_prods = OrderMatcher.match_products_multi(
+            transcript,
+            history=ai_brain.conversations.get(message.chat.id, [])
+        )
+        first_matched = matched_prods[0] if matched_prods else None
+
+        if first_matched:
+            set_pending_order(user_id, first_matched)
+            try:
+                await send_product_presentation(
+                    bot=bot,
+                    chat_id=message.chat.id,
+                    products=matched_prods[:3],
+                    safe_send_fn=safe_send,
+                    suggest_variants=True
+                )
+            except Exception as pe:
+                logger.error(f"Voice product presentation error: {pe}")
+                p_id = first_matched["id"]
+                p_name = first_matched["name"]
+                p_price = first_matched["sale_price"]
+                card_text = (
+                    f"✨ <b>{p_name}</b>\n\n"
+                    f"💰 <b>Narxi:</b> {p_price:,.0f} so'm\n"
+                    f"📏 <b>Mavjud o'lchamlar:</b> {first_matched.get('size')}\n"
+                    f"🎨 <b>Ranglari:</b> {first_matched.get('color')}\n"
+                    f"📦 <b>Holati:</b> Omborda mavjud ({first_matched.get('stock_quantity', 0)} dona)\n\n"
+                    f"<i>Xarid qilish uchun quyidagi tugmani bosing:</i>"
+                )
+                kb = InlineKeyboardMarkup(inline_keyboard=[[
+                    InlineKeyboardButton(
+                        text=f"⚡️ Hoziroq xarid qilish ({p_price:,.0f} so'm)",
+                        url=f"https://t.me/{bot_info.username}?start=buy_{p_id}"
+                    )
+                ]])
+                await safe_send(message.chat.id, card_text, reply_markup=kb)
         else:
-            await handle_group_message(message)
+            # Tovar emas, balki umumiy savol bo'lsa, matnli javobni ham xavfsiz jo'natish
+            catalog_btn = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="🛍️ Barcha kiyimlarni ko'rish", url=f"https://t.me/{bot_info.username}")
+            ]])
+            await safe_send(message.chat.id, ai_reply, reply_markup=catalog_btn)
 
     except Exception as e:
         logger.error(f"Ovozli xabarni qayta ishlashda xatolik: {e}")
@@ -2704,6 +2786,11 @@ async def on_startup(bot: Optional[Bot] = None, *args: Any, **kwargs: Any) -> No
 
 def main():
     init_db()
+    try:
+        from data.build_real_inventory import build_inventory
+        build_inventory()
+    except Exception as e:
+        logger.warning(f"Inventory build notice: {e}")
     logger.info("Ingichka Baraka Savdo Markazi AI boti ishga tushmoqda...")
 
     if "--polling" in sys.argv:

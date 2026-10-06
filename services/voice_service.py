@@ -51,17 +51,19 @@ class VoiceService:
 
     @classmethod
     async def text_to_speech(cls, text: str, filename_prefix: str = "voice", voice: str = VOICE_FEMALE) -> Optional[str]:
-        """Matnni o'zbekcha real yoqimli, chaqqon qiz bola ovoziga (Madina) aylantirish"""
+        """Matnni 20 yillik tajribali o'zbek sotuvchi ovoziga (Madina / Sardor) aylantirish"""
+        import time
         try:
             clean_text = cls._clean_for_speech(text)
             if not clean_text:
-                clean_text = "Voy, assalomu alaykum! Xush kelibsiz! Sizga qanday yordam bera olaman?"
+                clean_text = "Assalomu alaykum! Xush kelibsiz! Sizga qanday yordam bera olaman?"
 
-            out_path = AUDIO_DIR / f"{filename_prefix}_{os.getpid()}_{asyncio.get_event_loop().time():.0f}.mp3"
-            
-            # rate=+18% va pitch=+2Hz: real inson kabi chaqqon, mehmondo'st, quvnoq va jonli qiz ovozi!
+            ts = int(time.time() * 1000)
+            out_path = AUDIO_DIR / f"{filename_prefix}_{os.getpid()}_{ts}.mp3"
+
+            # rate=+18% va pitch=+2Hz: real inson kabi chaqqon, mehmondo'st, quvnoq va jonli ovoz!
             communicate = edge_tts.Communicate(clean_text, voice=voice, rate="+18%", pitch="+2Hz")
-            await communicate.save(str(out_path))
+            await asyncio.wait_for(communicate.save(str(out_path)), timeout=12.0)
             return str(out_path)
         except Exception as e:
             logger.error(f"TTS ovoz yaratishda xatolik: {e}")

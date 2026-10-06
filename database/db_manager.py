@@ -106,7 +106,8 @@ def init_db():
         ("gender", "TEXT"),
         ("material", "TEXT"),
         ("min_stock", "INTEGER DEFAULT 0"),
-        ("supplier", "TEXT")
+        ("supplier", "TEXT"),
+        ("image_url", "TEXT")
     ]
     for col_name, col_type in new_cols:
         if col_name not in existing_cols:

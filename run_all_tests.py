@@ -1,6 +1,6 @@
 """
 run_all_tests.py
-Executes all 14 test suites (9 unittest suites + 5 comprehensive procedural suites)
+Executes all 16 test suites (11 unittest suites + 5 comprehensive procedural suites)
 in strict order with clean DB / inventory teardowns and prints a unified report.
 """
 
@@ -26,7 +26,8 @@ UNITTEST_SUITES = [
     ("tests.test_task6_media_input", "Task 6: Voice Transcription & Vision Search"),
     ("tests.test_world_class_upgrade", "World-Class Retail Upgrades"),
     ("tests.test_enterprise_features", "Enterprise VIP Loyalty & AI Stylist"),
-    ("tests.test_channel_reply_intelligence", "Channel Post Replies & Discussion Intelligence")
+    ("tests.test_channel_reply_intelligence", "Channel Post Replies & Discussion Intelligence"),
+    ("tests.test_voice_sales_intelligence", "20-Year Sales Master Voice Response Intelligence")
 ]
 
 PROCEDURAL_SUITES = [
@@ -39,7 +40,7 @@ PROCEDURAL_SUITES = [
 
 def main():
     print("=" * 70)
-    print("🚀 RUNNING ALL 15 VERIFICATION SUITES FOR MARKAZSAVDO AI STORE BOT")
+    print("🚀 RUNNING ALL 16 VERIFICATION SUITES FOR MARKAZSAVDO AI STORE BOT")
     print("=" * 70)
 
     total_tests = 0
@@ -95,7 +96,7 @@ def main():
     init_db()
 
     print("\n" + "=" * 70)
-    print("📊 UNIFIED 14-SUITE TEST EXECUTION REPORT FOR @MARKAZSAVDO")
+    print("📊 UNIFIED 16-SUITE TEST EXECUTION REPORT FOR @MARKAZSAVDO")
     print("=" * 70)
     for mod, count, status in results_summary:
         print(f"  {status.ljust(8)} | {count:2d} tests | {mod}")
@@ -105,7 +106,7 @@ def main():
     print(f"TOTAL ERRORS:                    {total_errors}")
 
     if total_failures == 0 and total_errors == 0:
-        print("\n🏆 ALL 14 TEST & VERIFICATION SUITES PASSED WITH 100% SUCCESS RATE!")
+        print("\n🏆 ALL 16 TEST & VERIFICATION SUITES PASSED WITH 100% SUCCESS RATE!")
         return 0
     else:
         print("\n❌ SOME TESTS FAILED. PLEASE FIX THEM.")
