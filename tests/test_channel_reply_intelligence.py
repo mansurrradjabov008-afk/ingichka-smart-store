@@ -157,6 +157,88 @@ class TestChannelReplyIntelligence(unittest.TestCase):
         btn = kb.inline_keyboard[0][0]
         self.assertIn("start=buy_39", btn.url)
 
+    def test_handle_group_message_standalone_jackets_inquiry(self):
+        """Guruhda postga replies bo'lmagan mustaqil savol: 'erkaklar kurtkalarini kursata olasizmi'
+        20 yillik konsultativ javob, mahsulotlar taqdimoti va xom HTML teglarsiz toza chiqishi kerak"""
+        from bot.bot_app import handle_group_message, bot
+
+        mock_msg = MagicMock(spec=types.Message)
+        mock_msg.chat = MagicMock(id=-1009876543, type=ChatType.SUPERGROUP)
+        mock_msg.from_user = MagicMock(id=999888, first_name="Mansur", is_bot=False)
+        mock_msg.text = "erkaklar kurtkalarini kursata olasizmi"
+        mock_msg.caption = None
+        mock_msg.reply_to_message = None
+        mock_msg.is_automatic_forward = False
+        mock_msg.sender_chat = None
+
+        sent_messages = []
+        async def fake_safe_send(chat_id, text, reply_markup=None, **kwargs):
+            sent_messages.append({"chat_id": chat_id, "text": text, "reply_markup": reply_markup})
+            return True
+
+        presented_products = []
+        presented_kbs = []
+        async def fake_presentation(bot, chat_id, products, reply_markup=None, **kwargs):
+            presented_products.extend(products)
+            presented_kbs.append(reply_markup)
+            return True
+
+        mock_bot_info = MagicMock(username="Markazsavdo00_bot", id=8663033870)
+        with patch("bot.bot_app.safe_send", side_effect=fake_safe_send), \
+             patch("bot.bot_app.send_product_presentation", side_effect=fake_presentation), \
+             patch.object(bot, "send_chat_action", new_callable=AsyncMock), \
+             patch.object(bot, "get_me", new_callable=AsyncMock, return_value=mock_bot_info):
+            asyncio.run(handle_group_message(mock_msg))
+
+        # 1. Taqdimot chaqirilganini va erkaklar kurtkalari (15, 16, 17) uzatilganini tekshirish
+        self.assertGreaterEqual(len(presented_products), 1, "Kamida 1 ta kurtka taqdim etilishi shart")
+        p_ids = [p["id"] for p in presented_products]
+        self.assertIn(15, p_ids, "#15 kulrang vitrofka kurtka bo'lishi shart")
+
+        # 2. Xarid tugmalari va linklar mavjudligi
+        self.assertGreaterEqual(len(presented_kbs), 1)
+        kb = presented_kbs[0]
+        self.assertIsNotNone(kb)
+        has_buy_link = any(
+            any("start=buy_" in getattr(btn, "url", "") for btn in row)
+            for row in kb.inline_keyboard
+        )
+        self.assertTrue(has_buy_link, "Guruh xarid tugmalarida start=buy_ linki bo'lishi shart")
+
+        # 3. Xabarlarning birontasida xom HTML teglari (<b>, <i>) chiqmasligi shart!
+        for sm in sent_messages:
+            msg_text = sm.get("text", "")
+            self.assertNotIn("<b>", msg_text, "Xabarda xom <b> tegi chiqishi mumkin emas!")
+            self.assertNotIn("<i>", msg_text, "Xabarda xom <i> tegi chiqishi mumkin emas!")
+
+    def test_safe_send_html_and_markdown_safety(self):
+        """safe_send HTML va Markdown formatlarini to'g'ri aniqlashi va xatolikda teglarni tozalashi kerak"""
+        from bot.bot_app import safe_send, bot
+        from aiogram.exceptions import TelegramBadRequest
+
+        sent_calls = []
+        async def mock_send(chat_id, text, parse_mode=None, reply_markup=None):
+            sent_calls.append({"text": text, "parse_mode": parse_mode})
+            if "FAIL_MD" in text and parse_mode == "Markdown":
+                raise TelegramBadRequest(method=MagicMock(), message="Can't parse entities in Markdown")
+            return MagicMock()
+
+        with patch.object(bot, "send_message", side_effect=mock_send):
+            # 1. HTML teglari bo'lgan matn -> parse_mode="HTML" orqali ketishi kerak
+            asyncio.run(safe_send(12345, "✨ <b>Qizlar krossovkasi</b>\nNarxi: 85,000 so'm"))
+            self.assertEqual(sent_calls[-1]["parse_mode"], "HTML")
+            self.assertIn("<b>Qizlar krossovkasi</b>", sent_calls[-1]["text"])
+
+            # 2. Markdown matn -> parse_mode="Markdown" orqali ketishi kerak
+            asyncio.run(safe_send(12345, "✨ **Erkaklar kurtkasi**\nNarxi: 100,000 so'm"))
+            self.assertEqual(sent_calls[-1]["parse_mode"], "Markdown")
+
+            # 3. Buzilgan Markdown matn -> TelegramBadRequest bo'lganda teglarni tozalab plain text yuborishi kerak
+            asyncio.run(safe_send(12345, "✨ **FAIL_MD kurtka** [test link"))
+            self.assertIsNone(sent_calls[-1]["parse_mode"])
+            self.assertNotIn("**", sent_calls[-1]["text"])
+
 
 if __name__ == "__main__":
     unittest.main()
+

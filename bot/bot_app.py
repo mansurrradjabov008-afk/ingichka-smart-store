@@ -153,7 +153,7 @@ if GROQ_API_KEY:
     ai_brain.set_api_key(GROQ_API_KEY, "groq")
 
 async def safe_send(chat_id: int, text: str, reply_markup=None):
-    """Xabarni xatosiz yetkazish kafolati (Markdown xatoliklaridan himoyalangan va 4096 belgi limitga mos)"""
+    """Xabarni xatosiz yetkazish kafolati (HTML va Markdown xatoliklaridan 100% himoyalangan va 4096 belgi limitga mos)"""
     if not text:
         return None
 
@@ -176,22 +176,44 @@ async def safe_send(chat_id: int, text: str, reply_markup=None):
     last_msg = None
     for idx, chunk in enumerate(chunks):
         markup = reply_markup if idx == len(chunks) - 1 else None
-        try:
-            last_msg = await asyncio.wait_for(
-                bot.send_message(chat_id=chat_id, text=chunk, parse_mode="Markdown", reply_markup=markup),
-                timeout=12.0
-            )
-        except TelegramBadRequest:
-            clean_text = chunk.replace("**", "").replace("*", "").replace("`", "")
+        has_html = bool(re.search(r"<\/?(b|i|u|s|code|pre|a)\b", chunk, re.IGNORECASE))
+
+        sent = False
+        # 1. Agar matnda HTML teglari bo'lsa, avval parse_mode="HTML" orqali jo'natib ko'rish
+        if has_html:
             try:
                 last_msg = await asyncio.wait_for(
-                    bot.send_message(chat_id=chat_id, text=clean_text, reply_markup=markup),
+                    bot.send_message(chat_id=chat_id, text=chunk, parse_mode="HTML", reply_markup=markup),
                     timeout=12.0
                 )
+                sent = True
+            except Exception:
+                pass
+
+        # 2. Agar HTML bo'lmasa yoki HTML xatolik bersa, Markdown rejimida jo'natish
+        if not sent:
+            # Agar oldin HTML teglar bo'lsa, ularni tozalab Markdown rejimiga uzatamiz
+            md_chunk = re.sub(r"<\/?(b|i|u|s|code|pre|a)[^>]*>", "", chunk) if has_html else chunk
+            try:
+                last_msg = await asyncio.wait_for(
+                    bot.send_message(chat_id=chat_id, text=md_chunk, parse_mode="Markdown", reply_markup=markup),
+                    timeout=12.0
+                )
+                sent = True
+            except TelegramBadRequest:
+                # 3. Agar Markdown ham TelegramBadRequest bersa, barcha teglarni va formatlashni tozalab, oddiy matn (Plain Text) sifatida yuborish
+                clean_text = re.sub(r"<\/?(b|i|u|s|code|pre|a)[^>]*>", "", chunk)
+                clean_text = clean_text.replace("**", "").replace("*", "").replace("`", "").replace("___", "").replace("__", "")
+                try:
+                    last_msg = await asyncio.wait_for(
+                        bot.send_message(chat_id=chat_id, text=clean_text, reply_markup=markup),
+                        timeout=12.0
+                    )
+                    sent = True
+                except Exception as e_clean:
+                    log_bot_error(chat_id, f"Telegram send_message plain text retry failed: {e_clean}", exc=e_clean)
             except Exception as e:
-                log_bot_error(chat_id, f"Telegram send_message retry failed: {e}", exc=e)
-        except Exception as e:
-            log_bot_error(chat_id, f"Telegram send_message failed: {e}", exc=e)
+                log_bot_error(chat_id, f"Telegram send_message failed: {e}", exc=e)
     return last_msg
 
 
@@ -1875,12 +1897,12 @@ async def handle_voice_message(message: types.Message):
                 p_name = first_matched["name"]
                 p_price = first_matched["sale_price"]
                 card_text = (
-                    f"✨ <b>{p_name}</b>\n\n"
-                    f"💰 <b>Narxi:</b> {p_price:,.0f} so'm\n"
-                    f"📏 <b>Mavjud o'lchamlar:</b> {first_matched.get('size')}\n"
-                    f"🎨 <b>Ranglari:</b> {first_matched.get('color')}\n"
-                    f"📦 <b>Holati:</b> Omborda mavjud ({first_matched.get('stock_quantity', 0)} dona)\n\n"
-                    f"<i>Xarid qilish uchun quyidagi tugmani bosing:</i>"
+                    f"✨ **{p_name}**\n\n"
+                    f"💰 **Narxi:** **{p_price:,.0f} so'm**\n"
+                    f"📏 **Mavjud o'lchamlar:** {first_matched.get('size')}\n"
+                    f"🎨 **Ranglari:** {first_matched.get('color')}\n"
+                    f"📦 **Holati:** Omborda mavjud ({first_matched.get('stock_quantity', 0)} dona)\n\n"
+                    f"_Xarid qilish uchun quyidagi tugmani bosing:_"
                 )
                 kb = InlineKeyboardMarkup(inline_keyboard=[[
                     InlineKeyboardButton(
@@ -2014,14 +2036,15 @@ async def handle_group_message(message: types.Message):
                 await safe_send(message.chat.id, reply_filt)
                 return
 
-        # 4. KANAL POSTIDAGI MAHSULOTNI ANIQ ANIQLASH (Zero Hallucination + Exact Product Match)
+        # 4. KANAL POSTIGA JAVOB BERILGANDA ANIQ TOVARNI ANIQLASH (Channel Post Reply Detector)
         target_prod = None
-        if replied_caption:
-            target_prod = OrderMatcher.match_product(replied_caption)
-            if not target_prod:
-                target_prod = OrderMatcher.match_product(f"{clean_user_text} {replied_caption}")
-        if not target_prod:
-            target_prod = OrderMatcher.match_product(clean_user_text)
+        if replied_caption or is_reply_to_channel or is_reply_to_post:
+            if replied_caption:
+                target_prod = OrderMatcher.match_product(replied_caption)
+                if not target_prod:
+                    target_prod = OrderMatcher.match_product(f"{clean_user_text} {replied_caption}")
+            if not target_prod and is_reply_to_post:
+                target_prod = OrderMatcher.match_product(clean_user_text)
 
         if target_prod:
             p_name = target_prod.get("name")
@@ -2060,16 +2083,16 @@ async def handle_group_message(message: types.Message):
                 clean_mat = re.sub(r"SKU:\s*[A-Z0-9-]+\.?", "", p_mat).strip() if p_mat else ""
 
                 reply_card = (
-                    f"✨ <b>{p_name}</b>\n\n"
-                    f"💰 <b>Narxi:</b> {p_price:,.0f} so'm\n"
-                    f"📏 <b>Mavjud o'lchamlar:</b> {p_size}\n"
-                    f"🎨 <b>Ranglari:</b> {p_color}\n"
-                    f"📦 <b>Holati:</b> {stock_line}\n"
+                    f"✨ **{p_name}**\n\n"
+                    f"💰 **Narxi:** **{p_price:,.0f} so'm**\n"
+                    f"📏 **Mavjud o'lchamlar:** **{p_size}**\n"
+                    f"🎨 **Ranglari:** **{p_color}**\n"
+                    f"📦 **Holati:** {stock_line}\n"
                 )
                 if clean_mat:
-                    reply_card += f"ℹ️ <b>Tavsif:</b> {clean_mat}\n"
+                    reply_card += f"ℹ️ **Tavsif:** {clean_mat}\n"
 
-                reply_card += f"\n🛍️ <i>Xarid qilish yoki buyurtma berish uchun pastdagi tugmani bosing:</i>"
+                reply_card += f"\n🛍️ *Xarid qilish yoki buyurtma berish uchun pastdagi tugmani bosing:*"
                 await safe_send(message.chat.id, reply_card, reply_markup=pm_button)
                 return
             else:
@@ -2078,23 +2101,79 @@ async def handle_group_message(message: types.Message):
                     f"[DIQQAT: Xaridor do'kon kanalidagi #{p_id} - '{p_name}' "
                     f"(Narxi: {p_price:,.0f} so'm, O'lcham: {p_size}, Rang: {p_color}, "
                     f"Omborda: {p_stock} dona, Tavsif: {p_mat}) posti ostida savol bermoqda. "
-                    f"HECH QACHON 'rasmni ko'rolmayapman' dema! Ushbu tovar bo'yicha aniq maslahat ber]: {clean_user_text}"
+                    f"HECH QACHON 'rasmni ko'rolmayapman' dema! Ushbu tovar bo'yicha 20 yillik tajribali sotuvchi sifatida aniq maslahat ber]: {clean_user_text}"
                 )
                 ai_reply = ai_brain.ask(
-                    user_id=message.from_user.id,
+                    chat_id=message.chat.id,
                     user_message=prompt_with_context,
                     customer_name=message.from_user.first_name or "Mijoz"
                 )
                 await safe_send(message.chat.id, ai_reply, reply_markup=pm_button)
                 return
 
-        # 5. Umumiy AI javobi (agar aniq tovar topilmagan bo'lsa)
+        # 5. GURUHDA UMUMIY TOVAR YOKI MASLAHAT SO'ROVI (Multi-Product & 20-Year Sales Consultation)
+        matched_prods = OrderMatcher.match_products_multi(
+            clean_user_text or raw_text,
+            history=ai_brain.conversations.get(message.chat.id, [])
+        )
+
+        show_triggers = [
+            "kursat", "ko'rsat", "koʻrsat", "rasm", "rasmi", "foto", "surat", "variant", "turlari",
+            "qanaqa", "qanday", "modellar", "bormi", "bor", "kurtka", "krasovka", "krossovka",
+            "kiyim", "koylak", "ko'ylak", "shim", "kostyum", "sviter", "xudi", "narxi", "qancha",
+            "necha", "chegirma", "aktsiya", "bolalar", "erkaklar", "ayollar", "pijama"
+        ]
+        is_prod_query = bool(matched_prods) and (any(t in text_lower for t in show_triggers) or len(clean_user_text.split()) <= 6)
+
+        if is_prod_query:
+            # 1. 20 yillik tajribali sotuvchi-maslahatchi AI javobi (jonli, samimiy va maslahatli)
+            ai_reply = ai_brain.ask(
+                chat_id=message.chat.id,
+                user_message=clean_user_text or raw_text,
+                customer_name=message.from_user.first_name or "Mijoz"
+            )
+            if ai_reply:
+                await safe_send(message.chat.id, ai_reply)
+
+            # 2. Tovarlarning rasmli taqdimoti va 1-bosishda xarid qilish tugmalari
+            group_buttons = []
+            for i, p in enumerate(matched_prods[:3], 1):
+                pid = p.get("id")
+                pprice = p.get("sale_price", 0)
+                group_buttons.append([
+                    InlineKeyboardButton(
+                        text=f"⚡️ {i}-modelni xarid qilish ({pprice:,.0f} so'm)",
+                        url=f"https://t.me/{bot_info.username}?start=buy_{pid}"
+                    )
+                ])
+            group_buttons.append([
+                InlineKeyboardButton(
+                    text="🛍️ Barcha tovarlar va katalog",
+                    url=f"https://t.me/{bot_info.username}"
+                )
+            ])
+            group_kb = InlineKeyboardMarkup(inline_keyboard=group_buttons)
+
+            try:
+                await send_product_presentation(
+                    bot=bot,
+                    chat_id=message.chat.id,
+                    products=matched_prods[:3],
+                    reply_markup=group_kb,
+                    safe_send_fn=safe_send,
+                    suggest_variants=True
+                )
+            except Exception as pe:
+                logger.error(f"Group product presentation error: {pe}", exc_info=pe)
+            return
+
+        # 6. Umumiy AI javobi (agar aniq tovar topilmagan bo'lsa)
         user_query_for_ai = clean_user_text or raw_text
         if replied_caption:
             user_query_for_ai = f"[Kanal postidagi izoh: '{replied_caption[:150]}']: {user_query_for_ai}"
 
         ai_reply = ai_brain.ask(
-            user_id=message.from_user.id,
+            chat_id=message.chat.id,
             user_message=user_query_for_ai,
             customer_name=message.from_user.first_name or "Mijoz"
         )
