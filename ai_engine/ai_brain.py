@@ -299,8 +299,14 @@ Sen — "{STORE_NAME}" do'konining professional va samimiy BOSH SOTUVCHI-MASLAHA
             else:
                 reply = "Kiyimlar katalogimiz bo'yicha yana qanday ma'lumot yoki maslahat kerak bo'ladi? O'lcham va narxlar bo'yicha bajonidil yordam beraman!"
 
-        # TASK 4: Tone - Max 1 emoji per message
+        # TASK 4: Tone - Max 1 emoji per message & No apologetic image phrases
         if reply:
+            reply = re.sub(
+                r"(?:afsuski,?\s*)?(?:hozircha\s*)?rasm(?:lar)?ni\s*(?:to'g'ridan-to'g'ri\s*)?(?:ko'rsata|tashlay)\s*olmayman,?\s*(?:lekin\s*)?",
+                "Marhamat! ",
+                reply,
+                flags=re.IGNORECASE
+            )
             reply = SalesIntelligence.sanitize_emoji_count(reply, max_emojis=1)
 
         # TASK 5: Ketma-ket 2 marta "I don't know" (noma'lum) javobi berilganda handoff qilish
@@ -386,8 +392,9 @@ Sen — "{STORE_NAME}" do'konining professional va samimiy BOSH SOTUVCHI-MASLAHA
    - To'g'ridan-to'g'ri mijozga aytiladigan gapni yoz.
 
 8. KANAL POSTLARI VA RASMLAR OSTIDAGI SAVOLLAR:
-   - Agar foydalanuvchi "bu kiyim", "bu krasovka", "bu rasmdagi", "haqida ma'lumot" deb so'rasa yoki kontekstda mahsulot ko'rsatilgan bo'lsa:
-   - ASLO VA HECH QACHON "Afsuski, rasmni ko'rolmayapman" dema!
+   - Agar foydalanuvchi "bu kiyim", "bu krasovka", "bu rasmdagi", "haqida ma'lumot" deb so'rasa yoki rasm so'rasa ("ko'rsata olasizmi", "rasmini ko'raylik", "rasm bormi"):
+   - ASLO VA HECH QACHON "Afsuski, rasmni ko'rolmayapman" yoki "rasmni ko'rsata olmayman" dema! Chunki bot tizimimiz rasmli taqdimot va xarid tugmalarini avtomatik tarzda jo'natadi!
+   - Sen faqat: "Marhamat! Ushbu model..." deb xushmuomala, 20 yillik tajribali maslahat ber!
    - Berilgan mahsulot ma'lumotlari yoki katalogdagi eng mos tovar (nomi, narxi, razmeri, rangi, holati) asosida darhol aniq, chiroyli va to'liq ma'lumot ber.
 
 DO'KON MAHSULOTLARI (products.json):

@@ -78,6 +78,39 @@ class OrderMatcher:
     }
 
     @classmethod
+    def _get_products_from_history(cls, history: List[Dict[str, str]]) -> List[Dict[str, Any]]:
+        """Muloqot tarixidan eng oxirgi tilga olingan tovarlarni ketma-ketlikda olish"""
+        if not history:
+            return []
+        all_prods = DatabaseManager.get_products(in_stock_only=False)
+        prods_by_id = {p["id"]: p for p in all_prods}
+        found_prods = []
+        seen_ids = set()
+
+        for msg in reversed(history):
+            content = msg.get("content", "")
+            # 1. ID orqali qidirish: ID: 39, #39, buy_39, 39-tovar
+            id_matches = re.findall(r"(?:ID:\s*|#|buy_|tovar\s*)(\d{1,3})", content, re.IGNORECASE)
+            for id_str in id_matches:
+                pid = int(id_str)
+                if pid in prods_by_id and pid not in seen_ids:
+                    seen_ids.add(pid)
+                    found_prods.append(prods_by_id[pid])
+
+            # 2. Nom orqali qidirish
+            content_low = content.lower()
+            for p in all_prods:
+                p_id = p["id"]
+                if p_id not in seen_ids and p.get("name", "").lower() in content_low:
+                    seen_ids.add(p_id)
+                    found_prods.append(p)
+
+            if found_prods:
+                break
+
+        return found_prods
+
+    @classmethod
     def match_product(
         cls,
         text: str,
@@ -113,6 +146,35 @@ class OrderMatcher:
             ord_match = cls._match_ordinal_from_history(t_low, history)
             if ord_match:
                 return ord_match
+
+        # 2b. KONTEKSTUAL DAVOM QIDIRUVI (Context-First Matching for Follow-up Inquiries)
+        # Agar foydalanuvchi yangi kategoriya aytmasdan, avvalgi tovarning rangi, rasmi,
+        # razmeri yoki xususiyati haqida so'rasa (masalan: "Menga qora rangini kursata olasizmi")
+        if history:
+            category_words = [
+                "kurtka", "vitrofka", "vetrovka", "svitir", "sviter", "kofta", "koftacha", "xudi", "hoodie",
+                "ko'ylak", "koylak", "koʻylak", "koylakcha", "tonika", "yubka", "shim", "jinsi", "triko",
+                "kostyum", "sportivka", "troyka", "kardigan", "pijama", "pijamacha",
+                "krossovka", "krasovka", "tapichka", "shippak", "poyabzal", "futbolka",
+                "tekstil", "pastel", "ichki kiyim"
+            ]
+            has_new_category = any(cat in t_low for cat in category_words)
+
+            followup_triggers = [
+                "qora", "oq", "ko'k", "kok", "koʻk", "yashil", "sariq", "qizil", "pushti", "kulrang", "jigarrang", "havorang",
+                "rang", "rangi", "ranglar", "ranglari", "rangini", "ranglisi", "rangdagi", "rangidan",
+                "kursat", "ko'rsat", "koʻrsat", "kursata", "ko'rsata", "kursating", "ko'rsating", "ko'raylik",
+                "rasm", "rasmi", "rasmini", "surat", "surati", "suratini", "foto", "fotoni",
+                "razmer", "razmeri", "o'lcham", "o'lchami", "bormi", "bor", "mavjud",
+                "menga", "bizga", "olaman", "olmoqchiman", "shuni", "buni", "o'shani", "iltimos", "yoqdi",
+                "черный", "белый", "красный", "синий", "зеленый", "цвет", "показать", "фото"
+            ]
+            is_followup = any(trg in t_low for trg in followup_triggers) or len(t_low.split()) <= 7
+
+            if not has_new_category and is_followup:
+                hist_prods = cls._get_products_from_history(history)
+                if hist_prods:
+                    return hist_prods[0]
 
         # 3. Dinamik ko'p parametrli qidiruv (Barcha tovarlar bo'yicha)
         all_prods = DatabaseManager.get_products(in_stock_only=False)
@@ -282,6 +344,34 @@ class OrderMatcher:
                         cat_matches = [item for item in all_prods if item.get("category") == p.get("category") and item.get("id") != p.get("id")]
                         if cat_matches:
                             return cat_matches[:max_limit]
+
+        # 2b. Mijoz joriy tovar bo'yicha rang, rasm, razmer yoki ko'rsatish so'rasa (Context-First Follow-up)
+        # Masalan: "Menga qora rangini kursata olasizmi", "Iltimos qora rangini kursating", "Rasmini tashlang"
+        if history:
+            category_words = [
+                "kurtka", "vitrofka", "vetrovka", "svitir", "sviter", "kofta", "koftacha", "xudi", "hoodie",
+                "ko'ylak", "koylak", "koʻylak", "koylakcha", "tonika", "yubka", "shim", "jinsi", "triko",
+                "kostyum", "sportivka", "troyka", "kardigan", "pijama", "pijamacha",
+                "krossovka", "krasovka", "tapichka", "shippak", "poyabzal", "futbolka",
+                "tekstil", "pastel", "ichki kiyim"
+            ]
+            has_new_category = any(cat in t_low for cat in category_words)
+
+            followup_triggers = [
+                "qora", "oq", "ko'k", "kok", "koʻk", "yashil", "sariq", "qizil", "pushti", "kulrang", "jigarrang", "havorang",
+                "rang", "rangi", "ranglar", "ranglari", "rangini", "ranglisi", "rangdagi", "rangidan",
+                "kursat", "ko'rsat", "koʻrsat", "kursata", "ko'rsata", "kursating", "ko'rsating", "ko'raylik",
+                "rasm", "rasmi", "rasmini", "surat", "surati", "suratini", "foto", "fotoni",
+                "razmer", "razmeri", "o'lcham", "o'lchami", "bormi", "bor", "mavjud",
+                "menga", "bizga", "olaman", "olmoqchiman", "shuni", "buni", "o'shani", "iltimos", "yoqdi",
+                "черный", "белый", "красный", "синий", "зеленый", "цвет", "показать", "фото"
+            ]
+            is_followup = any(trg in t_low for trg in followup_triggers) or len(t_low.split()) <= 7
+
+            if not has_new_category and is_followup:
+                hist_prods = cls._get_products_from_history(history)
+                if hist_prods:
+                    return hist_prods[:max_limit]
 
         # 3. Kategoriya va mahsulot turlari bo'yicha aniq saralash (Real 41 ta tovar uchun)
         # 3a. Oyoq kiyim / Tapichka / Krossovka alohida turlari

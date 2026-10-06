@@ -18,6 +18,7 @@ def test_consultative_sales_flow():
     print("CONSULTATIVE SALES & DISCOVERY DIALOGUE VERIFICATION")
     print("============================================================")
 
+    ai_brain.conversations.clear()
     uid = 998877
 
     # 1. Turn 1: Category inquiry for wife

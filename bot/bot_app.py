@@ -1,4 +1,5 @@
 import asyncio
+import time
 import logging
 import os
 import sys
@@ -6,7 +7,7 @@ import io
 import re
 import base64
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 
 # Add project root to sys.path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
@@ -143,6 +144,9 @@ def is_admin_user(user: Optional[types.User], chat_id: Optional[int] = None) -> 
             ChannelService.register_boss(user.id, user.full_name or "Раджабов", user.username)
         return True
     return False
+
+# Guruhdagi faol muloqot sessiyalari: (chat_id, user_id) -> timestamp
+ACTIVE_GROUP_SESSIONS: Dict[Tuple[int, int], float] = {}
 
 # Initialize AI Brain keys if configured
 if GEMINI_API_KEY:
@@ -1989,20 +1993,42 @@ async def handle_group_message(message: types.Message):
         ):
             is_reply_to_channel = True
 
+    user_id = message.from_user.id
+    now = time.time()
+    last_session_time = ACTIVE_GROUP_SESSIONS.get((message.chat.id, user_id), 0.0)
+    is_active_dialogue = (now - last_session_time < 600.0)  # 10 daqiqa davomida mijoz bilan muloqot uzluksiz
+
     triggers = [
-        "qancha", "narxi", "narx", "necha pul", "nechi pul", "razmer", "o'lcham", "bor", "bormi",
-        "kurtka", "xudi", "ko'ylak", "koylak", "sumka", "sochiq", "ingichka", "dostavka", "yetkazish",
-        "krasovka", "krossovka", "krasofka", "krasofkacha", "krosovka", "krosofka", "krasovkacha",
-        "poyabzal", "tufli", "jinsi", "shim", "kiyim", "katalog", "chegirma", "aktsiya",
-        "pijama", "pijamacha", "futbolka", "sviter", "svitir", "kofta", "koftacha", "sportivka",
-        "troyka", "kostyum", "tapichka", "shippak", "haqida", "xaqida", "malumot", "ma'lumot",
-        "rasmdagi", "rasm", "olaman", "olmoqchiman", "sotib", "xarid", "zakaz", "buyurtma",
-        "красовка", "кроссовки", "худи", "куртка", "сочик", "туфли", "доставка", "цена", "размер"
+        # Narx va Savollar
+        "qancha", "narxi", "narx", "necha pul", "nechi pul", "necha", "nechi", "puli", "narxlari", "bormi", "bor", "mavjud",
+        "dostavka", "yetkazish", "yetkazib", "qachon", "qayerda", "manzil",
+        # Kiyim va poyabzal toifalari
+        "kurtka", "kurtkacha", "xudi", "ko'ylak", "koylak", "koʻylak", "koylakcha", "sumka", "sochiq", "ingichka",
+        "krasovka", "krossovka", "krasofka", "krasofkacha", "krosovka", "krosofka", "krasovkacha", "kedalar",
+        "poyabzal", "tufli", "jinsi", "shim", "shimcha", "triko", "kiyim", "kiyimlar", "katalog", "chegirma", "aktsiya",
+        "pijama", "pijamacha", "futbolka", "futbolkacha", "sviter", "svitir", "kofta", "koftacha", "sportivka",
+        "troyka", "troykacha", "kostyum", "tapichka", "tapochka", "shippak", "haqida", "xaqida", "malumot", "ma'lumot",
+        # Rasmlar va Ko'rsatish
+        "kursat", "ko'rsat", "koʻrsat", "kursata", "ko'rsata", "kursating", "ko'rsating", "ko'raylik", "kuraylik",
+        "rasm", "rasmi", "rasmini", "rasmlar", "surat", "surati", "suratini", "foto", "fotoni", "tashlang", "yuboring",
+        # Ranglar
+        "qora", "oq", "ko'k", "kok", "koʻk", "yashil", "sariq", "qizil", "pushti", "kulrang", "jigarrang", "havorang",
+        "rang", "rangi", "ranglar", "ranglari", "rangini", "ranglisi", "rangdagi", "rangidan",
+        # O'lchamlar
+        "razmer", "razmeri", "o'lcham", "o'lchami", "razmerlar", "razmerlari",
+        # Xarid niyati va murojaat
+        "olaman", "olmoqchiman", "olmoqchi", "sotib", "xarid", "zakaz", "buyurtma", "olib", "bering", "yordam", "maslahat",
+        "menga", "bizga", "iltimos", "kerak", "olasizmi", "olamiz", "variant", "variantlar", "turlari", "yana", "boshqa",
+        # Oila / Kimga
+        "uglimga", "o'g'limga", "oʻgʻlimga", "qizimga", "bolamga", "bolalarga", "farzandimga", "ayolimga", "erimga", "onamga", "dadamga", "opamga", "singlimga",
+        # Ruscha triggerlar
+        "красовка", "кроссовки", "худи", "куртка", "сочик", "туфли", "доставка", "цена", "размер", "показать", "покажите", "фото", "черный", "белый", "цвет"
     ]
     has_trigger = any(t in text_lower for t in triggers)
-    should_process = has_trigger or is_mentioned or is_reply_to_bot or is_reply_to_channel or (is_reply_to_post and bool(replied_caption))
+    should_process = is_active_dialogue or has_trigger or is_mentioned or is_reply_to_bot or is_reply_to_channel or (is_reply_to_post and bool(replied_caption))
 
     if should_process:
+        ACTIVE_GROUP_SESSIONS[(message.chat.id, user_id)] = now
         try:
             await bot.send_chat_action(chat_id=message.chat.id, action="typing")
         except Exception:
@@ -2118,21 +2144,32 @@ async def handle_group_message(message: types.Message):
         )
 
         show_triggers = [
-            "kursat", "ko'rsat", "koʻrsat", "rasm", "rasmi", "foto", "surat", "variant", "turlari",
-            "qanaqa", "qanday", "modellar", "bormi", "bor", "kurtka", "krasovka", "krossovka",
+            "kursat", "ko'rsat", "koʻrsat", "kursata", "ko'rsata", "kursating", "ko'rsating", "ko'raylik", "kuraylik",
+            "rasm", "rasmi", "rasmini", "rasmlar", "surat", "surati", "suratini", "foto", "fotoni", "tashlang", "yuboring",
+            "variant", "variantlar", "turlari", "qanaqa", "qanday", "modellar", "bormi", "bor", "kurtka", "krasovka", "krossovka",
             "kiyim", "koylak", "ko'ylak", "shim", "kostyum", "sviter", "xudi", "narxi", "qancha",
-            "necha", "chegirma", "aktsiya", "bolalar", "erkaklar", "ayollar", "pijama"
+            "necha", "chegirma", "aktsiya", "bolalar", "erkaklar", "ayollar", "pijama",
+            "qora", "oq", "ko'k", "yashil", "sariq", "qizil", "rang", "rangi", "rangini", "ranglar"
         ]
         is_prod_query = bool(matched_prods) and (any(t in text_lower for t in show_triggers) or len(clean_user_text.split()) <= 6)
 
         if is_prod_query:
             # 1. 20 yillik tajribali sotuvchi-maslahatchi AI javobi (jonli, samimiy va maslahatli)
+            prod_summary = ", ".join([f"#{p['id']} {p['name']} (Ranglar: {p.get('color')}, O'lcham: {p.get('size')}, Narx: {p.get('sale_price'):,.0f} so'm)" for p in matched_prods[:2]])
+            ai_query = f"[Mijoz ko'rayotgan tovar: {prod_summary}]: {clean_user_text or raw_text}"
+
             ai_reply = ai_brain.ask(
                 chat_id=message.chat.id,
-                user_message=clean_user_text or raw_text,
+                user_message=ai_query,
                 customer_name=message.from_user.first_name or "Mijoz"
             )
             if ai_reply:
+                ai_reply = re.sub(
+                    r"(?:afsuski,?\s*)?(?:hozircha\s*)?rasm(?:lar)?ni\s*(?:to'g'ridan-to'g'ri\s*)?(?:ko'rsata|tashlay)\s*olmayman,?\s*(?:lekin\s*)?",
+                    "Marhamat! ",
+                    ai_reply,
+                    flags=re.IGNORECASE
+                )
                 await safe_send(message.chat.id, ai_reply)
 
             # 2. Tovarlarning rasmli taqdimoti va 1-bosishda xarid qilish tugmalari

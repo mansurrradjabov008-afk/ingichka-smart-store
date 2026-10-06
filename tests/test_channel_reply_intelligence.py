@@ -239,6 +239,87 @@ class TestChannelReplyIntelligence(unittest.TestCase):
             self.assertNotIn("**", sent_calls[-1]["text"])
 
 
+    def test_group_multiturn_dialogue_pajamas_color_followup(self):
+        """Guruhda 2-bosqichli suhbat:
+        Turn 1: 'Uglimga pijama olmoqchi edim qanqa ranglari bor'
+        Turn 2: 'Menga qora rangini kursata olasizmi'
+        Bot jim qolmasligi, #39 bolalar pijamasini tanishi va rasmli taqdimot berishi shart!"""
+        from bot.bot_app import handle_group_message, bot, ACTIVE_GROUP_SESSIONS
+        from ai_engine.ai_brain import ai_brain
+
+        chat_id = -10077665544
+        user_id = 11223344
+
+        # Clear active sessions & brain conversations for clean test
+        ACTIVE_GROUP_SESSIONS.clear()
+        ai_brain.conversations[chat_id] = []
+
+        sent_messages = []
+        async def fake_safe_send(cid, text, reply_markup=None, **kwargs):
+            sent_messages.append({"chat_id": cid, "text": text, "reply_markup": reply_markup})
+            return True
+
+        presented_products = []
+        async def fake_presentation(bot, chat_id, products, reply_markup=None, **kwargs):
+            presented_products.extend(products)
+            return True
+
+        mock_bot_info = MagicMock(username="Markazsavdo00_bot", id=8663033870)
+
+        with patch("bot.bot_app.safe_send", side_effect=fake_safe_send), \
+             patch("bot.bot_app.send_product_presentation", side_effect=fake_presentation), \
+             patch.object(bot, "send_chat_action", new_callable=AsyncMock), \
+             patch.object(bot, "get_me", new_callable=AsyncMock, return_value=mock_bot_info):
+
+            # --- TURN 1 ---
+            msg1 = MagicMock(spec=types.Message)
+            msg1.chat = MagicMock(id=chat_id, type=ChatType.SUPERGROUP)
+            msg1.from_user = MagicMock(id=user_id, first_name="Dildora", is_bot=False)
+            msg1.text = "Uglimga pijama olmoqchi edim qanqa ranglari bor"
+            msg1.caption = None
+            msg1.reply_to_message = None
+            msg1.is_automatic_forward = False
+            msg1.sender_chat = None
+
+            asyncio.run(handle_group_message(msg1))
+
+            self.assertIn((chat_id, user_id), ACTIVE_GROUP_SESSIONS, "Aktiv sessiya saqlanishi shart!")
+            self.assertGreaterEqual(len(presented_products), 1, "Turn 1 da pijama taqdim etilishi kerak")
+            p1_ids = [p["id"] for p in presented_products]
+            self.assertIn(39, p1_ids, "Turn 1 da #39 o'g'il bolalar pijamasi chiqishi shart")
+
+            # --- TURN 2: Follow-up rang so'rovi ---
+            presented_products.clear()
+            sent_messages.clear()
+
+            msg2 = MagicMock(spec=types.Message)
+            msg2.chat = MagicMock(id=chat_id, type=ChatType.SUPERGROUP)
+            msg2.from_user = MagicMock(id=user_id, first_name="Dildora", is_bot=False)
+            msg2.text = "Menga qora rangini kursata olasizmi"
+            msg2.caption = None
+            msg2.reply_to_message = None
+            msg2.is_automatic_forward = False
+            msg2.sender_chat = None
+
+            asyncio.run(handle_group_message(msg2))
+
+            # Bot mutlaqo JIM QOLMASLIGI kerak!
+            self.assertTrue(len(sent_messages) > 0 or len(presented_products) > 0, "Bot follow-up savolga aslo jim qolmasligi shart!")
+
+            # Taqdim etilgan tovar #39 (pijama) bo'lishi kerak, #7 (svitir) EMAS!
+            self.assertGreaterEqual(len(presented_products), 1, "Turn 2 da mahsulot taqdimoti chaqirilishi shart")
+            p2_ids = [p["id"] for p in presented_products]
+            self.assertIn(39, p2_ids, "Turn 2 da #39 bolalar pijamasi ko'rsatilishi shart! Begona tovar (#7 svitir) bo'lmasligi kerak!")
+            self.assertNotIn(7, p2_ids, "Svitir (#7) ko'rsatilishi mutlaqo taqiqlanadi!")
+
+            # Hech qanday 'rasmni ko'rsata olmayman' uzri bo'lmasligi kerak
+            for sm in sent_messages:
+                txt = sm.get("text", "")
+                self.assertNotIn("rasmni ko'rsata olmayman", txt)
+                self.assertNotIn("rasmlarni to'g'ridan-to'g'ri ko'rsata olmayman", txt)
+
+
 if __name__ == "__main__":
     unittest.main()
+
 
