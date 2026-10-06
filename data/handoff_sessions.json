@@ -5,8 +5,8 @@
     "username": "yo'q",
     "reason": "Grounding validator failed twice",
     "status": "active",
-    "started_at": "2026-10-06T20:12:31.044206",
-    "last_activity_at": "2026-10-06T20:12:31.044206",
+    "started_at": "2026-10-06T20:16:16.267380",
+    "last_activity_at": "2026-10-06T20:16:16.267380",
     "summary": "1. Boshlang'ich murojaat: Mijoz do'konimiz bilan muloqotni boshladi\n2. Qiziqish mavzusi: Mijoz do'kon assortimenti va xizmatlari bilan qiziqdi\n3. Bot taqdim etgan oxirgi ma'lumot: Bot salomlashdi va menyuni taqdim etdi\n4. Mijozning oxirgi xabari: Mijozning so'nggi xabari\n5. Yo'naltirish sababi va holat: Grounding validator failed twice"
   }
 }
