@@ -97,13 +97,18 @@ class OrderMatcher:
                     seen_ids.add(pid)
                     found_prods.append(prods_by_id[pid])
 
-            # 2. Nom orqali qidirish
+            # 2. Nom yoki asosiy kalit so'zlar orqali qidirish
             content_low = content.lower()
             for p in all_prods:
                 p_id = p["id"]
-                if p_id not in seen_ids and p.get("name", "").lower() in content_low:
-                    seen_ids.add(p_id)
-                    found_prods.append(p)
+                p_name_low = p.get("name", "").lower()
+                if p_id not in seen_ids:
+                    if p_name_low in content_low or (len(p_name_low) >= 8 and p_name_low[:12] in content_low):
+                        seen_ids.add(p_id)
+                        found_prods.append(p)
+                    elif p.get("sku", "").lower() in content_low:
+                        seen_ids.add(p_id)
+                        found_prods.append(p)
 
             if found_prods:
                 break
@@ -316,180 +321,176 @@ class OrderMatcher:
         cls,
         text: str,
         history: Optional[List[Dict[str, str]]] = None,
+        pending_product: Optional[Dict[str, Any]] = None,
         max_limit: int = 3
     ) -> List[Dict[str, Any]]:
         """
-        Mijoz so'ragan yoki qidirgan mahsulotlarni topish (Task 2).
-        Bir nechta mahsulot mos kelsa max 3 ta gacha qaytaradi.
+        Mijoz so'ragan yoki qidirgan mahsulotlarni topish (Task 2 & 20-Year Sales AI).
+        Haqiqiy 41 ta tovar katalogi asosida ko'p parametrli eng kuchli saralash.
         """
         if not text:
-            return []
+            return [pending_product] if pending_product else []
 
         t_low = text.lower().strip()
 
         # 1. Aniq ID yoki SKU bo'lsa (bitta mahsulot)
-        if re.search(r"\b(?:kk[-_\s]?)(\d{4})\b", t_low) or re.search(r"(?:#|buy_|id\s*|tovar\s*|mahsulot\s*)(\d{1,3})", t_low):
-            single = cls.match_product(text, history=history)
+        if re.search(r"\b(?:kk|ms)[-_\s]?(\d{4})\b", t_low) or re.search(r"(?:#|buy_|id\s*|tovar\s*|mahsulot\s*)(\d{1,3})", t_low):
+            single = cls.match_product(text, history=history, pending_product=pending_product)
             return [single] if single else []
 
         all_prods = DatabaseManager.get_products(in_stock_only=False)
 
-        # 2. Mijoz "boshqa turlari", "boshqa variantlar", "yana qanaqa bor" desa - avvalgi tovar toifasini olish
+        # 2. Flagship / Video / Savdo Kanali / Do'kon katalogi so'rovi
+        # Masalan: "videodagi kiyim rasmini tashla", "kanaldagi tovarlar", "do'konda qanaqa kiyimlar bor", "katalog rasmlari"
+        flagship_triggers = [
+            "videodagi", "video", "kanaldagi", "kanalidagi", "kanalimizdagi",
+            "dokondagi", "do'kondagi", "qanday kiyimlar bor", "nimalar bor",
+            "qanaqa kiyim", "do'konda nima bor", "assortiment", "katalog",
+            "barcha tovarlar", "barcha kiyimlar"
+        ]
+        category_specific_words = [
+            "kurtka", "vitrofka", "svitir", "sviter", "kofta", "xudi", "koylak", "ko'ylak", "tonika", "dvoyka",
+            "shim", "jinsi", "triko", "kostyum", "sportivka", "kardigan", "pijama", "krossovka", "krasovka", "tapichka", "shippak"
+        ]
+        has_specific_category = any(cw in t_low for cw in category_specific_words)
+
+        if any(ft in t_low for ft in flagship_triggers) and not has_specific_category:
+            # Haqiqiy do'kon video va kanaldagi eng sara flagman tovarlar
+            flagships = [p for p in all_prods if p.get("id") in [1, 4, 17, 40]]
+            if len(flagships) >= 2:
+                return flagships[:max_limit]
+
+        # 3. Mijoz "boshqa turlari", "boshqa variantlar", "yana qanaqa bor" desa
         variant_inquiry_words = ["boshqa turlari", "boshqa variant", "turlarini", "turlari", "yana qanaqa", "boshqacha", "boshqalari", "yana bormi"]
-        if any(w in t_low for w in variant_inquiry_words) and history:
-            for msg in reversed(history[-4:]):
-                c_low = msg.get("content", "").lower()
-                for p in all_prods:
-                    if p.get("name", "").lower() in c_low or str(p.get("id")) in c_low:
-                        cat_matches = [item for item in all_prods if item.get("category") == p.get("category") and item.get("id") != p.get("id")]
-                        if cat_matches:
-                            return cat_matches[:max_limit]
+        if any(w in t_low for w in variant_inquiry_words):
+            base_p = pending_product
+            if not base_p and history:
+                hist_p = cls._get_products_from_history(history)
+                base_p = hist_p[0] if hist_p else None
+            if base_p:
+                cat_matches = [item for item in all_prods if item.get("category") == base_p.get("category") and item.get("id") != base_p.get("id")]
+                if cat_matches:
+                    return cat_matches[:max_limit]
 
-        # 2b. Mijoz joriy tovar bo'yicha rang, rasm, razmer yoki ko'rsatish so'rasa (Context-First Follow-up)
-        # Masalan: "Menga qora rangini kursata olasizmi", "Iltimos qora rangini kursating", "Rasmini tashlang"
-        if history:
-            category_words = [
-                "kurtka", "vitrofka", "vetrovka", "svitir", "sviter", "kofta", "koftacha", "xudi", "hoodie",
-                "ko'ylak", "koylak", "koʻylak", "koylakcha", "tonika", "yubka", "shim", "jinsi", "triko",
-                "kostyum", "sportivka", "troyka", "kardigan", "pijama", "pijamacha",
-                "krossovka", "krasovka", "tapichka", "shippak", "poyabzal", "futbolka",
-                "tekstil", "pastel", "ichki kiyim"
-            ]
-            has_new_category = any(cat in t_low for cat in category_words)
-
-            followup_triggers = [
-                "qora", "oq", "ko'k", "kok", "koʻk", "yashil", "sariq", "qizil", "pushti", "kulrang", "jigarrang", "havorang",
-                "rang", "rangi", "ranglar", "ranglari", "rangini", "ranglisi", "rangdagi", "rangidan",
-                "kursat", "ko'rsat", "koʻrsat", "kursata", "ko'rsata", "kursating", "ko'rsating", "ko'raylik",
-                "rasm", "rasmi", "rasmini", "surat", "surati", "suratini", "foto", "fotoni",
-                "razmer", "razmeri", "o'lcham", "o'lchami", "bormi", "bor", "mavjud",
-                "menga", "bizga", "olaman", "olmoqchiman", "shuni", "buni", "o'shani", "iltimos", "yoqdi",
-                "черный", "белый", "красный", "синий", "зеленый", "цвет", "показать", "фото"
-            ]
-            is_followup = any(trg in t_low for trg in followup_triggers) or len(t_low.split()) <= 7
-
-            if not has_new_category and is_followup:
+        # 4. Mijoz rasm, rang, razmer yoki foto so'ragan bo'lsa (Context-First Follow-up)
+        # Masalan: "rasmini tashla", "buni rasmi", "suratini ko'raylik", "menga qora rangini ko'rsat"
+        followup_triggers = [
+            "qora", "oq", "ko'k", "kok", "koʻk", "yashil", "sariq", "qizil", "pushti", "kulrang", "jigarrang", "havorang",
+            "rang", "rangi", "ranglar", "ranglari", "rangini", "ranglisi", "rangdagi", "rangidan",
+            "kursat", "ko'rsat", "koʻrsat", "kursata", "ko'rsata", "kursating", "ko'rsating", "ko'raylik", "kuraylik",
+            "rasm", "rasmi", "rasmini", "surat", "surati", "suratini", "foto", "fotoni",
+            "razmer", "razmeri", "o'lcham", "o'lchami", "bormi", "bor", "mavjud",
+            "menga", "bizga", "olaman", "olmoqchiman", "shuni", "buni", "o'shani", "iltimos", "yoqdi", "tashlang", "yuboring",
+            "черный", "белый", "красный", "синий", "зеленый", "цвет", "показать", "фото"
+        ]
+        is_followup_intent = any(pt in t_low for pt in followup_triggers) or len(t_low.split()) <= 7
+        if not has_specific_category and is_followup_intent:
+            if pending_product:
+                return [pending_product]
+            if history:
                 hist_prods = cls._get_products_from_history(history)
                 if hist_prods:
                     return hist_prods[:max_limit]
 
-        # 3. Kategoriya va mahsulot turlari bo'yicha aniq saralash (Real 41 ta tovar uchun)
-        # 3a. Oyoq kiyim / Tapichka / Krossovka alohida turlari
-        if any(w in t_low for w in ["tapichka", "shippak", "slansi", "tapochka"]):
-            tap_matches = [p for p in all_prods if "tapichka" in p.get("name", "").lower() or "shippak" in p.get("name", "").lower()]
-            if tap_matches:
-                return tap_matches[:max_limit]
+        # 5. DINAMIK KO'P PARAMETRLI REYTING (Barcha 41 ta tovar uchun yuqori aniqlikdagi baholash)
+        t_words = [normalize_uzbek_word(w) for w in re.findall(r"[\w']+", t_low)]
+        scored_prods = []
 
-        if any(w in t_low for w in ["krossovka", "krasovka", "krasofka", "krasofkacha", "krosofka", "krosovka", "krasovkacha", "kedalar", "keta"]):
-            kros_matches = [p for p in all_prods if "krossovka" in p.get("name", "").lower()]
-            if any(w in t_low for w in ["qiz", "qizlar", "qizlarga", "qizcha"]):
-                kros_matches = [p for p in kros_matches if "qiz" in p.get("name", "").lower()] + [p for p in kros_matches if "qiz" not in p.get("name", "").lower()]
-            elif any(w in t_low for w in ["o'g'il", "ogil", "o‘g‘il", "oʻgʻil", "ogilcha"]):
-                kros_matches = [p for p in kros_matches if "o'g'il" in p.get("name", "").lower()] + [p for p in kros_matches if "o'g'il" not in p.get("name", "").lower()]
-            if kros_matches:
-                return kros_matches[:max_limit]
+        for p in all_prods:
+            score = 0
+            p_name = p.get("name", "").lower()
+            p_desc = (p.get("description") or "").lower()
+            p_brand = (p.get("brand") or "").lower()
+            p_color = (p.get("color") or "").lower()
+            p_cat = (p.get("category") or "").lower()
+            p_material = (p.get("material") or "").lower()
+            p_name_words = [normalize_uzbek_word(w) for w in re.findall(r"[\w']+", p_name)]
+            p_color_words = [normalize_uzbek_word(w) for w in re.findall(r"[\w']+", p_color)]
 
-        if any(w in t_low for w in ["oyoq kiyim", "poyabzal", "poyafzal", "oyoq kiyimi"]):
-            shoes = [p for p in all_prods if p.get("category") == "Oyoq kiyim"]
-            if shoes:
-                return shoes[:max_limit]
+            # 1. To'liq yoki qisman nom mosligi
+            if p_name and p_name in t_low:
+                score += 85
+            elif len(t_low) >= 5 and t_low in p_name:
+                score += 55
 
-        # 3b. Kurtkalar va vitrofkalar
-        if any(w in t_low for w in ["kurtka", "kurtkacha", "vitrofka", "vetrovka", "jilet", "nimcha", "plash"]):
-            kurtkas = [p for p in all_prods if p.get("category") == "Kurtka" or "vitrofka" in p.get("name", "").lower() or "kurtka" in p.get("name", "").lower()]
-            if kurtkas:
-                return kurtkas[:max_limit]
+            # 2. So'zlar bo'yicha aniq moslik
+            for qw in t_words:
+                if len(qw) >= 3:
+                    if qw in p_name_words:
+                        score += 35
+                    elif qw in p_name:
+                        score += 25
+                    if qw in p_color_words:
+                        score += 45
+                    elif qw in p_color:
+                        score += 30
+                    if qw in p_brand:
+                        score += 45
+                    if qw in p_cat:
+                        score += 25
+                    if qw in p_material:
+                        score += 30
+                    if qw in p_desc:
+                        score += 15
 
-        # 3c. Svitirlar, sviterlar, koftalar, xudilar
-        if any(w in t_low for w in ["svitir", "sviter", "svitercha", "kofta", "koftacha", "xudi", "hoodie", "pulover", "jumper", "svitshot"]):
-            sviters = [p for p in all_prods if p.get("category") == "Svitir" or "svitir" in p.get("name", "").lower() or "sviter" in p.get("name", "").lower() or "kofta" in p.get("name", "").lower()]
-            if sviters:
-                return sviters[:max_limit]
+            # 3. Maxsus toifalar va kalit so'zlar
+            if any(w in t_words for w in ["krossovka", "krasovka", "krasofka", "krosovka"]):
+                if "krossovka" in p_name:
+                    score += 45
+                else:
+                    score -= 40
 
-        # 3d. Ko'ylaklar, tonikalar, yubkalar
-        if any(w in t_low for w in ["ko'ylak", "koylak", "koʻylak", "koylakcha", "tonika", "dvoyka", "yubka"]):
-            dresses = [p for p in all_prods if p.get("category") == "Ko'ylak" or "ko'ylak" in p.get("name", "").lower() or "tonika" in p.get("name", "").lower()]
-            if dresses:
-                return dresses[:max_limit]
+            if any(w in t_words for w in ["vitrofka", "vetrovka", "kurtka"]):
+                if "vitrofka" in p_name or p_cat == "Kurtka":
+                    score += 45
+                else:
+                    score -= 40
 
-        # 3e. Shimlar, jinsilar, trikolar
-        if any(w in t_low for w in ["shim", "shimcha", "jinsi", "triko", "bryuk"]):
-            pants = [p for p in all_prods if p.get("category") == "Shim" or "shim" in p.get("name", "").lower() or "jinsi" in p.get("name", "").lower() or "triko" in p.get("name", "").lower()]
-            if pants:
-                return pants[:max_limit]
+            if any(w in t_words for w in ["svitir", "sviter", "kofta", "xudi"]):
+                if p_cat == "Svitir" or "svitir" in p_name or "kofta" in p_name:
+                    score += 45
+                else:
+                    score -= 40
 
-        # 3f. Kostyumlar va sportivkalar
-        if any(w in t_low for w in ["kostyum", "sportivka", "troyka", "troykacha"]):
-            suits = [p for p in all_prods if p.get("category") == "Kostyum" or "kostyum" in p.get("name", "").lower() or "sportivka" in p.get("name", "").lower()]
-            if suits:
-                return suits[:max_limit]
+            if any(w in t_words for w in ["tonika"]):
+                if "tonika" in p_name:
+                    score += 50
 
-        # 3g. Kardiganlar
-        if any(w in t_low for w in ["kardigan", "jaket"]):
-            cardigans = [p for p in all_prods if p.get("category") == "Kardigan" or "kardigan" in p.get("name", "").lower()]
-            if cardigans:
-                return cardigans[:max_limit]
+            if any(w in t_words for w in ["tapichka", "shippak"]):
+                if "tapichka" in p_name or "shippak" in p_name:
+                    score += 45
+                else:
+                    score -= 40
 
-        # 3h. Pijamalar
-        if any(w in t_low for w in ["pijama", "pijamacha", "pijamalar", "uy kiyimi"]):
-            pijamas = [p for p in all_prods if p.get("category") == "Pijama" or "pijama" in p.get("name", "").lower()]
-            if any(w in t_low for w in ["qiz", "qizlar", "qizlarga", "qizcha"]):
-                pijamas = [p for p in pijamas if "qiz" in p.get("name", "").lower()] + [p for p in pijamas if "qiz" not in p.get("name", "").lower()]
-            elif any(w in t_low for w in ["o'g'il", "ogil", "o‘g‘il", "oʻgʻil", "ogilcha"]):
-                pijamas = [p for p in pijamas if "o'g'il" in p.get("name", "").lower()] + [p for p in pijamas if "o'g'il" not in p.get("name", "").lower()]
-            if pijamas:
-                return pijamas[:max_limit]
+            # 4. Jins (Gender) bo'yicha qat'iy tekshiruv
+            if "qiz" in t_words or "qizlar" in t_words or "ayol" in t_words:
+                if "qiz" in p_name_words or "qiz" in p_name or p.get("gender") == "Ayol":
+                    score += 45
+                if "o'g'il" in p_name_words or "o'g'il" in p_name or p.get("gender") == "Erkak":
+                    score -= 65
 
-        # 3i. Bolalar kiyimlari
-        if any(w in t_low for w in ["bolalar kiyimi", "bolalar", "chaqaloq", "bolalarga"]):
-            kids = [p for p in all_prods if p.get("gender") == "Bolalar" or "bolalar" in p.get("name", "").lower() or p.get("category") == "Bolalar kiyimi"]
-            if kids:
-                return kids[:max_limit]
+            if "ogil" in t_words or "o'g'il" in t_words or "erkak" in t_words:
+                if "o'g'il" in p_name_words or "o'g'il" in p_name or p.get("gender") == "Erkak":
+                    score += 45
+                if "qiz" in p_name_words or "qiz" in p_name or p.get("gender") == "Ayol":
+                    score -= 65
 
-        # 3j. Ayollar kiyimlari
-        if any(w in t_low for w in ["ayollar kiyimi", "ayollar", "ayol", "qizlar"]):
-            women = [p for p in all_prods if p.get("gender") == "Ayol" or p.get("category") in ["Ko'ylak", "Kardigan"]]
-            if women:
-                return women[:max_limit]
+            if p.get("stock_quantity", 0) > 0 and score > 0:
+                score += 5
 
-        # 3k. Erkaklar kiyimlari
-        if any(w in t_low for w in ["erkaklar kiyimi", "erkaklar", "erkak"]):
-            men = [p for p in all_prods if p.get("gender") == "Erkak"]
-            if men:
-                return men[:max_limit]
+            if score > 0:
+                scored_prods.append((score, p))
 
-        # 3l. Futbolkalar va Uy tekstili
-        if any(w in t_low for w in ["futbolka", "mayka"]):
-            tshirts = [p for p in all_prods if p.get("category") == "Futbolka" or "futbolka" in p.get("name", "").lower()]
-            if tshirts:
-                return tshirts[:max_limit]
+        scored_prods.sort(key=lambda x: x[0], reverse=True)
 
-        if any(w in t_low for w in ["uy tekstili", "tekstil", "pastel", "postel", "jild", "choyshab"]):
-            textile = [p for p in all_prods if p.get("category") == "Uy tekstili" or "pastel" in p.get("name", "").lower()]
-            if textile:
-                return textile[:max_limit]
+        if scored_prods and scored_prods[0][0] >= 30:
+            top_score = scored_prods[0][0]
+            # Eng yuqori ballga yaqin bo'lganlarini saralash
+            res = [p for s, p in scored_prods if s >= max(30, top_score - 35)]
+            return res[:max_limit]
 
-        # 3m. Umumiy kiyimlar yoki do'kon katalogi so'ralganda
-        if any(w in t_low for w in ["qanday kiyimlar bor", "nimalar bor", "qanaqa kiyim", "do'konda nima bor", "assortiment", "katalog"]):
-            # Har xil toifadagi eng mashhur tovarlardan sara 3 tasini taqdim etish
-            samples = [p for p in all_prods if p.get("id") in [15, 4, 1]]
-            if len(samples) >= 2:
-                return samples[:max_limit]
-
-        # 4. Brend bo'yicha
-        for brand in ["zara", "nike", "adidas", "h&m", "lc waikiki", "uztex", "pull&bear", "defacto", "polo", "boss"]:
-            if brand in t_low:
-                brand_prods = [
-                    p for p in all_prods
-                    if brand in (p.get("brand") or "").lower() or brand in p.get("name", "").lower()
-                ]
-                if len(brand_prods) > 1:
-                    return brand_prods[:max_limit]
-                elif len(brand_prods) == 1:
-                    return brand_prods
-
-        # 5. Yagona mahsulotni aniqlash
-        single = cls.match_product(text, history=history)
+        # 6. Agar yuqoridagilardan topilmasa, match_product tekshiruvi
+        single = cls.match_product(text, history=history, pending_product=pending_product)
         return [single] if single else []
 
     @classmethod

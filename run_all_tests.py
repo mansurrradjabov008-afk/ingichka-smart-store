@@ -27,7 +27,8 @@ UNITTEST_SUITES = [
     ("tests.test_world_class_upgrade", "World-Class Retail Upgrades"),
     ("tests.test_enterprise_features", "Enterprise VIP Loyalty & AI Stylist"),
     ("tests.test_channel_reply_intelligence", "Channel Post Replies & Discussion Intelligence"),
-    ("tests.test_voice_sales_intelligence", "20-Year Sales Master Voice Response Intelligence")
+    ("tests.test_voice_sales_intelligence", "20-Year Sales Master Voice Response Intelligence"),
+    ("tests.test_real_photo_presentation", "Instant Real Photo Presentation & Ranked Scoring")
 ]
 
 PROCEDURAL_SUITES = [

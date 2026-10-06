@@ -621,11 +621,11 @@ DO'KON SHARTLARI (store_info.json):
                     return f"Sizga '{best_item['name']}' ({best_item['price']:,.0f} so'm) modelimizni tavsiya qilaman — juda sifatli, qulay va xaridorgir. Buyurtmani rasmiylashtiraylikmi?"
             else:
                 if lang == "ru":
-                    return "Рекомендую обратить внимание на наши бестселлеры: 'Adidas Printli futbolka' (200,000 сум) и 'Nike Yozgi kepka' (229,000 сум). Какой вариант вам интереснее?"
+                    return "Рекомендую обратить внимание на наши бестселлеры: 'Polo erkaklar svitir kofta' (75,000 сум) и 'Poplin ayollar ko'ylak komplekt' (70,000 сум). Какой вариант вам интереснее?"
                 elif lang == "uz_cyrl":
-                    return "Сизга энг харидоргир товарларимиздан 'Adidas Printli futbolka' (200,000 сўм) ёки 'Nike Yozgi kepka' (229,000 сўм)ни тавсия қиламан. Қайси бирини кўриб чиқамиз?"
+                    return "Сизга энг харидоргир сара моделларимиздан 'Polo erkaklar svitir kofta' (75,000 сўм) ёки 'Poplin ayollar ko'ylak komplekt' (70,000 сўм)ни тавсия қиламан. Қайси бирини кўриб чиқамиз?"
                 else:
-                    return "Sizga eng ommabop va sifatli modellarimizdan 'Adidas Printli futbolka' (200,000 so'm) yoki 'Nike Yozgi kepka' (229,000 so'm)ni tavsiya qilaman. Qaysi birini ko'rib chiqamiz?"
+                    return "Sizga eng ommabop va sifatli modellarimizdan 'Polo erkaklar svitir kofta' (75,000 so'm) yoki 'Poplin ayollar ko'ylak komplekt' (70,000 so'm)ni tavsiya qilaman. Qaysi birini ko'rib chiqamiz?"
 
         # 2. Xarid niyati va Tasdiqlash (Agreement to buy) tekshiruvi
         # Qoida: Faqat xaridor sotib olishga rozi bo'lgandan keyin telefon va manzil so'rash

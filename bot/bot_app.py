@@ -1113,10 +1113,11 @@ async def handle_post_to_channel(message: types.Message):
     cfg = ChannelService.get_config()
     channel_target = parts[2] if len(parts) > 2 else (cfg.get("channel_id") or cfg.get("channel_username") or CHANNEL_USERNAME)
 
+    post_img = prod.get("photo_id") or prod.get("image_url")
     if channel_target:
         try:
-            if prod.get("photo_id"):
-                await bot.send_photo(chat_id=channel_target, photo=prod["photo_id"], caption=post_text, parse_mode="Markdown", reply_markup=buy_kb)
+            if post_img:
+                await bot.send_photo(chat_id=channel_target, photo=post_img, caption=post_text, parse_mode="Markdown", reply_markup=buy_kb)
             else:
                 await bot.send_message(chat_id=channel_target, text=post_text, parse_mode="Markdown", reply_markup=buy_kb)
             await message.answer(f"✅ Post muvaffaqiyatli ravishda **{channel_target}** kanaliga joylandi!")
@@ -1129,8 +1130,8 @@ async def handle_post_to_channel(message: types.Message):
                 f"Quyida tayyor post berildi, uni hozircha kanalingizga Forward qilishingiz mumkin 👇"
             )
 
-    if prod.get("photo_id"):
-        await bot.send_photo(chat_id=message.chat.id, photo=prod["photo_id"], caption=post_text, parse_mode="Markdown", reply_markup=buy_kb)
+    if post_img:
+        await bot.send_photo(chat_id=message.chat.id, photo=post_img, caption=post_text, parse_mode="Markdown", reply_markup=buy_kb)
     else:
         await bot.send_message(chat_id=message.chat.id, text=post_text, parse_mode="Markdown", reply_markup=buy_kb)
     await message.answer("👆 Yuqoridagi tayyor postni o'z savdo kanalingizga forward qiling yoki nusxasini joylang!")
@@ -2120,6 +2121,18 @@ async def handle_group_message(message: types.Message):
 
                 reply_card += f"\n🛍️ *Xarid qilish yoki buyurtma berish uchun pastdagi tugmani bosing:*"
                 await safe_send(message.chat.id, reply_card, reply_markup=pm_button)
+                if any(w in text_lower for w in ["rasmini tashla", "rasmini yubor", "rasmini ko'rsat", "rasmini kursat", "foto tashla", "suratini tashla"]):
+                    try:
+                        await send_product_presentation(
+                            bot=bot,
+                            chat_id=message.chat.id,
+                            products=[target_prod],
+                            reply_markup=pm_button,
+                            safe_send_fn=safe_send,
+                            suggest_variants=False
+                        )
+                    except Exception:
+                        pass
                 return
             else:
                 # Murakkab / maslahat so'rovi bo'lsa, AI ga to'liq kontekst beramiz
@@ -2135,6 +2148,18 @@ async def handle_group_message(message: types.Message):
                     customer_name=message.from_user.first_name or "Mijoz"
                 )
                 await safe_send(message.chat.id, ai_reply, reply_markup=pm_button)
+                if any(w in text_lower for w in ["rasmini tashla", "rasmini yubor", "rasmini ko'rsat", "rasmini kursat", "foto tashla", "suratini tashla"]):
+                    try:
+                        await send_product_presentation(
+                            bot=bot,
+                            chat_id=message.chat.id,
+                            products=[target_prod],
+                            reply_markup=pm_button,
+                            safe_send_fn=safe_send,
+                            suggest_variants=False
+                        )
+                    except Exception:
+                        pass
                 return
 
         # 5. GURUHDA UMUMIY TOVAR YOKI MASLAHAT SO'ROVI (Multi-Product & 20-Year Sales Consultation)
@@ -2343,9 +2368,10 @@ async def handle_private_chat(message: types.Message):
                     InlineKeyboardButton(text="📢 @markazsavdo kanaliga o'tish", url=CHANNEL_URL)
                 ]
             ])
-            if fwd_prod.get("photo_id"):
+            img_to_send = fwd_prod.get("photo_id") or fwd_prod.get("image_url")
+            if img_to_send:
                 try:
-                    await bot.send_photo(chat_id=message.chat.id, photo=fwd_prod["photo_id"], caption=fwd_text_card, parse_mode="Markdown", reply_markup=fwd_kb)
+                    await bot.send_photo(chat_id=message.chat.id, photo=img_to_send, caption=fwd_text_card, parse_mode="Markdown", reply_markup=fwd_kb)
                     return
                 except Exception:
                     pass
@@ -2604,9 +2630,11 @@ async def handle_private_chat(message: types.Message):
             return
 
     # === MAHSULOT VA OMBOR QOIDALARI (Task 2 & Rules 3, 6, 10) ===
+    pending_prod = USER_PENDING_ORDERS.get(user_id)
     matched_prods = OrderMatcher.match_products_multi(
         text,
-        history=ai_brain.conversations.get(message.chat.id, [])
+        history=ai_brain.conversations.get(message.chat.id, []),
+        pending_product=pending_prod
     )
     first_matched = matched_prods[0] if matched_prods else None
 
@@ -2828,6 +2856,31 @@ async def handle_private_chat(message: types.Message):
 
     # Savollarga javob qaytarish
     await safe_send(message.chat.id, response, reply_markup=None)
+
+    # === AUTO PHOTO DELIVERY GUARANTEE ===
+    # Agar xaridor mahsulot rasmini so'ragan bo'lsa yoki javobda rasm taqdim etilishi aytilgan bo'lsa,
+    # darhol o'sha tovarning haqiqiy rasmini va 1-bosishda xarid tugmalarini chiqaramiz!
+    photo_triggers = ["rasm", "rasmi", "rasmini", "foto", "fotoni", "surat", "suratini", "kursat", "ko'rsat", "tashlang", "yuboring", "videodagi", "kanaldagi"]
+    user_wanted_image = any(w in text_lower for w in photo_triggers)
+    promised_image = any(w in response.lower() for w in ["rasm", "surat", "marhamat"])
+    if user_wanted_image or promised_image:
+        auto_prods = OrderMatcher.match_products_multi(
+            f"{text} {response}",
+            history=ai_brain.conversations.get(message.chat.id, []),
+            pending_product=USER_PENDING_ORDERS.get(user_id)
+        )
+        if auto_prods:
+            set_pending_order(user_id, auto_prods[0])
+            try:
+                await send_product_presentation(
+                    bot=bot,
+                    chat_id=message.chat.id,
+                    products=auto_prods[:3],
+                    safe_send_fn=safe_send,
+                    suggest_variants=True
+                )
+            except Exception as pe:
+                logger.error(f"Auto photo delivery presentation error: {pe}", exc_info=pe)
 
 
 # Global Error Handler: Kutilmagan xatolik yuz berganda Webhook 500 qaytarmasligi va Telegram loopga tushmasligi kafolati
