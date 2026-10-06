@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple, Callable
 import requests
 
-from config import GEMINI_API_KEY
+from config import GEMINI_API_KEY, _FALLBACK_GEMINI_KEY
 from database.db_manager import DatabaseManager
 from services.catalog_service import load_products
 
@@ -133,25 +133,35 @@ class MediaInputService:
         }
 
         # Eng chaqqon va barqaror modellarni ketma-ket sinash (gemini-3.5-flash-lite eng birinchi!)
-        active_models = ["gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-3.8-flash"]
-        for model in active_models:
-            try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
-                resp = requests.post(url, json=payload, timeout=7.5)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    candidates = data.get("candidates", [])
-                    if candidates and "content" in candidates[0]:
-                        parts = candidates[0]["content"].get("parts", [])
-                        if parts and "text" in parts[0]:
-                            text = parts[0]["text"].strip()
-                            if text:
-                                logger.info(f"Ovoz transkripsiyasi muvaffaqiyatli ({model}): {text[:50]}...")
-                                return {"success": True, "transcript": text}
-                else:
-                    logger.warning(f"Voice transcribe status {resp.status_code} with {model}: {resp.text[:120]}")
-            except Exception as e:
-                logger.warning(f"Voice transcribe timeout/error with {model}: {e}")
+        active_models = ["gemini-3.5-flash-lite", "gemini-3.6-flash"]
+        keys_to_try = [GEMINI_API_KEY]
+        if _FALLBACK_GEMINI_KEY and _FALLBACK_GEMINI_KEY not in keys_to_try:
+            keys_to_try.append(_FALLBACK_GEMINI_KEY)
+
+        for api_k in keys_to_try:
+            if not api_k:
+                continue
+            for model in active_models:
+                try:
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_k}"
+                    resp = requests.post(url, json=payload, timeout=7.5)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        candidates = data.get("candidates", [])
+                        if candidates and "content" in candidates[0]:
+                            parts = candidates[0]["content"].get("parts", [])
+                            if parts and "text" in parts[0]:
+                                text = parts[0]["text"].strip()
+                                if text:
+                                    logger.info(f"Ovoz transkripsiyasi muvaffaqiyatli ({model}): {text[:50]}...")
+                                    return {"success": True, "transcript": text}
+                    elif resp.status_code == 401:
+                        logger.warning(f"Voice transcribe 401 unauthorized on key ...{api_k[-4:]} with {model}")
+                        break
+                    else:
+                        logger.warning(f"Voice transcribe status {resp.status_code} with {model}: {resp.text[:120]}")
+                except Exception as e:
+                    logger.warning(f"Voice transcribe timeout/error with {model}: {e}")
 
         # Agar transkripsiya bo'sh yoki xato bo'lsa
         return {

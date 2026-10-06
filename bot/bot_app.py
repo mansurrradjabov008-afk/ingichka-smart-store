@@ -1799,10 +1799,20 @@ async def handle_voice_message(message: types.Message):
 
         bot_info = await bot.get_me()
 
+        # Reply kontekstini qo'shish (Screenshot 2: Agar kanal postidagi tovar ostida ovozli savol berilsa)
+        replied_caption = ""
+        reply_obj = getattr(message, "reply_to_message", None)
+        if reply_obj:
+            replied_caption = (getattr(reply_obj, "caption", None) or getattr(reply_obj, "text", None) or "").strip()
+
+        ask_text = transcript
+        if replied_caption:
+            ask_text = f"{transcript} [Kontekst: Foydalanuvchi quyidagi tovar posti ostida so'ramoqda: {replied_caption}]"
+
         # 3. AI Sotuvchidan 20 yillik tajribaga asoslangan samimiy javob olish
         ai_reply = ai_brain.ask(
             chat_id=message.chat.id,
-            user_message=transcript,
+            user_message=ask_text,
             customer_name=user_name
         )
 
@@ -1820,10 +1830,12 @@ async def handle_voice_message(message: types.Message):
                     v_bytes = vf.read()
                 if v_bytes:
                     input_voice = BufferedInputFile(v_bytes, filename=f"voice_reply_{user_id}.mp3")
+                    reply_id = message.message_id if message.chat.type != ChatType.PRIVATE else None
                     await bot.send_voice(
                         chat_id=message.chat.id,
                         voice=input_voice,
                         caption="🎙️ <b>20 yillik tajribali sotuvchi-maslahatchi javobi</b>",
+                        reply_to_message_id=reply_id,
                         parse_mode="HTML"
                     )
                     voice_sent = True
@@ -1837,8 +1849,9 @@ async def handle_voice_message(message: types.Message):
                     pass
 
         # 5. Tovar so'ralgan bo'lsa, foto-taqdimot va xarid tugmasini chiqarish
+        match_query = f"{transcript} {replied_caption}" if replied_caption else transcript
         matched_prods = OrderMatcher.match_products_multi(
-            transcript,
+            match_query,
             history=ai_brain.conversations.get(message.chat.id, [])
         )
         first_matched = matched_prods[0] if matched_prods else None
@@ -2810,6 +2823,7 @@ async def handle_test_voice(request):
         return web.json_response({"success": False, "error": str(e)})
 
 async def handle_debug_transcribe(request):
+    import requests
     try:
         path = await VoiceService.text_to_speech("Kiyimlar bormi?", "test_trans")
         with open(path, "rb") as f:

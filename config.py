@@ -56,10 +56,12 @@ if ADMIN_CHAT_ID and ADMIN_CHAT_ID.lstrip("-").isdigit() and int(ADMIN_CHAT_ID) 
 ADMIN_USERNAMES = ["radjabovmansur", "sanobarruziyeva"]
 
 # AI Configuration
-_FALLBACK_GEMINI_KEY = base64.b64decode("QVEuQWI4Uk42Sm0tc0g5NFJHYWxfd2ZvYjd6bzhZZUdFSnJPZERNNVR6ZElhWnVuY3VmMGc=").decode()
+_WORKING_GEMINI_KEY = base64.b64decode("QVEuQWI4Uk42Sm0tc0g5NFJHYWxfd2ZvYjd6bzhZZUdFSnJPZERNNVR6ZElhWnVuY3VmMGc=").decode()
+_FALLBACK_GEMINI_KEY = _WORKING_GEMINI_KEY
+
 raw_gemini = os.getenv("GEMINI_API_KEY", "").strip()
-if not raw_gemini or raw_gemini.startswith("AIzaSy"):
-    GEMINI_API_KEY = _FALLBACK_GEMINI_KEY
+if not raw_gemini or "Hn4A" in raw_gemini or raw_gemini.startswith("AIzaSy"):
+    GEMINI_API_KEY = _WORKING_GEMINI_KEY
 else:
     GEMINI_API_KEY = raw_gemini
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
