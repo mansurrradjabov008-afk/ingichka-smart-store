@@ -105,6 +105,13 @@ class MediaInputService:
                 "message": VOICE_API_FALLBACK_MSG
             }
 
+        # MIME turini tozalash (Gemini faqat standart toza formatlarni qabul qiladi)
+        clean_mime = "audio/ogg"
+        if mime_type:
+            clean_mime = mime_type.split(";")[0].strip().lower()
+        if clean_mime not in ["audio/ogg", "audio/mp3", "audio/wav", "audio/m4a", "audio/aac", "audio/flac"]:
+            clean_mime = "audio/ogg"
+
         audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
         prompt = (
             "Ushbu ovozli xabarni toza, aniq o'zbek tilida so'zma-so'z matnga aylantir (transcribe). "
@@ -116,7 +123,7 @@ class MediaInputService:
                     {"text": prompt},
                     {
                         "inlineData": {
-                            "mimeType": mime_type,
+                            "mimeType": clean_mime,
                             "data": audio_b64
                         }
                     }
@@ -125,11 +132,12 @@ class MediaInputService:
             "generationConfig": {"temperature": 0.1, "maxOutputTokens": 300}
         }
 
-        # Modellarni ketma-ket sinash
-        for model in ["gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.6-flash", "gemini-2.0-flash", "gemini-1.5-flash"]:
+        # Eng chaqqon va barqaror modellarni ketma-ket sinash (gemini-3.5-flash-lite eng birinchi!)
+        active_models = ["gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-3.8-flash"]
+        for model in active_models:
             try:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
-                resp = requests.post(url, json=payload, timeout=10)
+                resp = requests.post(url, json=payload, timeout=7.5)
                 if resp.status_code == 200:
                     data = resp.json()
                     candidates = data.get("candidates", [])
@@ -138,9 +146,12 @@ class MediaInputService:
                         if parts and "text" in parts[0]:
                             text = parts[0]["text"].strip()
                             if text:
+                                logger.info(f"Ovoz transkripsiyasi muvaffaqiyatli ({model}): {text[:50]}...")
                                 return {"success": True, "transcript": text}
+                else:
+                    logger.warning(f"Voice transcribe status {resp.status_code} with {model}: {resp.text[:120]}")
             except Exception as e:
-                logger.error(f"Voice transcribe error with {model}: {e}")
+                logger.warning(f"Voice transcribe timeout/error with {model}: {e}")
 
         # Agar transkripsiya bo'sh yoki xato bo'lsa
         return {

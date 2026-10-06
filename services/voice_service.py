@@ -63,7 +63,7 @@ class VoiceService:
 
             # rate=+18% va pitch=+2Hz: real inson kabi chaqqon, mehmondo'st, quvnoq va jonli ovoz!
             communicate = edge_tts.Communicate(clean_text, voice=voice, rate="+18%", pitch="+2Hz")
-            await asyncio.wait_for(communicate.save(str(out_path)), timeout=12.0)
+            await asyncio.wait_for(communicate.save(str(out_path)), timeout=6.0)
             return str(out_path)
         except Exception as e:
             logger.error(f"TTS ovoz yaratishda xatolik: {e}")

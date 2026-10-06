@@ -19,7 +19,7 @@ if sys.platform == "win32":
         pass
 
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, FSInputFile
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, FSInputFile, BufferedInputFile
 from aiogram.filters import CommandStart, Command
 from aiogram.enums import ChatType, ChatMemberStatus
 from aiogram.exceptions import TelegramBadRequest
@@ -1707,6 +1707,8 @@ async def handle_photo_message(message: types.Message):
         logger.error(f"Rasm bilan ishlashda xatolik: {e}")
         await safe_send(message.chat.id, PHOTO_API_FALLBACK_MSG)
 
+LAST_VOICE_EVENT: Dict[str, Any] = {}
+
 # 8.1 Ovozli xabarlar bilan ishlash (TASK 6: Voice and photo input + 20 yillik tajribali sotuvchi)
 @dp.message(F.voice | F.audio)
 async def handle_voice_message(message: types.Message):
@@ -1736,12 +1738,26 @@ async def handle_voice_message(message: types.Message):
         except Exception:
             pass
 
-        voice_file_io = io.BytesIO()
-        await bot.download(voice_obj, destination=voice_file_io)
-        audio_bytes = voice_file_io.getvalue()
+        # 1. Ovozli xabarni xavfsiz yuklab olish
+        downloaded = await bot.download(voice_obj)
+        if isinstance(downloaded, io.BytesIO):
+            audio_bytes = downloaded.getvalue()
+        elif hasattr(downloaded, "read"):
+            audio_bytes = downloaded.read()
+        else:
+            voice_file_io = io.BytesIO()
+            await bot.download(voice_obj, destination=voice_file_io)
+            audio_bytes = voice_file_io.getvalue()
+
+        if not audio_bytes:
+            logger.warning(f"Bo'sh audio yuklab olindi (user {user_id})")
+            await safe_send(message.chat.id, VOICE_EMPTY_TRANSCRIPT_MSG)
+            return
+
         mime = "audio/ogg" if message.voice else (getattr(message.audio, "mime_type", None) or "audio/mpeg")
 
-        trans_res = MediaInputService.transcribe_audio(audio_bytes, mime_type=mime)
+        # 2. Asinxron no-blocking transkripsiya (Event loop qotib qolmasligi uchun)
+        trans_res = await asyncio.to_thread(MediaInputService.transcribe_audio, audio_bytes, mime_type=mime)
         if not trans_res.get("success"):
             await safe_send(message.chat.id, trans_res.get("message", VOICE_EMPTY_TRANSCRIPT_MSG))
             return
@@ -1783,15 +1799,16 @@ async def handle_voice_message(message: types.Message):
 
         bot_info = await bot.get_me()
 
-        # 1. AI Sotuvchidan 20 yillik tajribaga asoslangan samimiy javob olish
+        # 3. AI Sotuvchidan 20 yillik tajribaga asoslangan samimiy javob olish
         ai_reply = ai_brain.ask(
             chat_id=message.chat.id,
             user_message=transcript,
             customer_name=user_name
         )
 
-        # 2. Ovozli javob (Voice Note) yaratish va jo'natish
+        # 4. Ovozli javob (Voice Note) yaratish va jo'natish
         voice_path = None
+        voice_sent = False
         try:
             voice_path = await VoiceService.text_to_speech(
                 text=ai_reply,
@@ -1799,12 +1816,17 @@ async def handle_voice_message(message: types.Message):
                 voice=VoiceService.VOICE_FEMALE
             )
             if voice_path and os.path.exists(voice_path):
-                await bot.send_voice(
-                    chat_id=message.chat.id,
-                    voice=FSInputFile(voice_path),
-                    caption="🎙️ <b>20 yillik tajribali sotuvchi-maslahatchi javobi</b>",
-                    parse_mode="HTML"
-                )
+                with open(voice_path, "rb") as vf:
+                    v_bytes = vf.read()
+                if v_bytes:
+                    input_voice = BufferedInputFile(v_bytes, filename=f"voice_reply_{user_id}.mp3")
+                    await bot.send_voice(
+                        chat_id=message.chat.id,
+                        voice=input_voice,
+                        caption="🎙️ <b>20 yillik tajribali sotuvchi-maslahatchi javobi</b>",
+                        parse_mode="HTML"
+                    )
+                    voice_sent = True
         except Exception as ve:
             logger.warning(f"Voice note yuborishda ogohlantirish: {ve}")
         finally:
@@ -1814,7 +1836,7 @@ async def handle_voice_message(message: types.Message):
                 except Exception:
                     pass
 
-        # 3. Tovar so'ralgan bo'lsa, foto-taqdimot va xarid tugmasini chiqarish
+        # 5. Tovar so'ralgan bo'lsa, foto-taqdimot va xarid tugmasini chiqarish
         matched_prods = OrderMatcher.match_products_multi(
             transcript,
             history=ai_brain.conversations.get(message.chat.id, [])
@@ -1823,6 +1845,9 @@ async def handle_voice_message(message: types.Message):
 
         if first_matched:
             set_pending_order(user_id, first_matched)
+            # Agar ovoz yuborilmagan bo'lsa, xaridor javobsiz qolmasligi uchun matnni yuboramiz
+            if not voice_sent:
+                await safe_send(message.chat.id, ai_reply)
             try:
                 await send_product_presentation(
                     bot=bot,
@@ -1852,14 +1877,34 @@ async def handle_voice_message(message: types.Message):
                 ]])
                 await safe_send(message.chat.id, card_text, reply_markup=kb)
         else:
-            # Tovar emas, balki umumiy savol bo'lsa, matnli javobni ham xavfsiz jo'natish
-            catalog_btn = InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text="🛍️ Barcha kiyimlarni ko'rish", url=f"https://t.me/{bot_info.username}")
-            ]])
-            await safe_send(message.chat.id, ai_reply, reply_markup=catalog_btn)
+            # Tovar emas, balki umumiy savol bo'lsa (yoki ovoz ketmagan bo'lsa) matnli javobni ham xavfsiz jo'natish
+            if not voice_sent or message.chat.type != ChatType.PRIVATE:
+                catalog_btn = InlineKeyboardMarkup(inline_keyboard=[[
+                    InlineKeyboardButton(text="🛍️ Barcha kiyimlarni ko'rish", url=f"https://t.me/{bot_info.username}")
+                ]])
+                await safe_send(message.chat.id, ai_reply, reply_markup=catalog_btn)
+
+        LAST_VOICE_EVENT.clear()
+        LAST_VOICE_EVENT.update({
+            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "user_id": user_id,
+            "duration": duration,
+            "transcript": transcript,
+            "voice_sent": voice_sent,
+            "matched_product": first_matched["name"] if first_matched else None,
+            "error": None
+        })
 
     except Exception as e:
         logger.error(f"Ovozli xabarni qayta ishlashda xatolik: {e}")
+        log_bot_error(message.chat.id, f"Voice handling error: {e}", exc=e)
+        LAST_VOICE_EVENT.clear()
+        LAST_VOICE_EVENT.update({
+            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "user_id": user_id,
+            "duration": duration,
+            "error": str(e)
+        })
         await safe_send(message.chat.id, VOICE_API_FALLBACK_MSG)
     finally:
         if temp_path:
@@ -2727,6 +2772,39 @@ async def handle_diag(request):
     }
     return web.json_response(diag_data)
 
+async def handle_last_voice(request):
+    return web.json_response(LAST_VOICE_EVENT or {"status": "no voice messages processed yet"})
+
+async def handle_logs(request):
+    log_path = Path(__file__).resolve().parent.parent / "bot.log"
+    lines = []
+    if log_path.exists():
+        try:
+            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                lines = [l.strip() for l in f.readlines()[-60:]]
+        except Exception as e:
+            lines = [f"Error reading log: {e}"]
+    return web.json_response({"log_lines_count": len(lines), "logs": lines})
+
+async def handle_test_voice(request):
+    try:
+        t0 = asyncio.get_event_loop().time()
+        path = await VoiceService.text_to_speech("Assalomu alaykum! Do'konimizga xush kelibsiz!", "test_endpoint")
+        t1 = asyncio.get_event_loop().time()
+        sz = os.path.getsize(path) if (path and os.path.exists(path)) else 0
+        if path and os.path.exists(path):
+            try:
+                os.remove(path)
+            except Exception:
+                pass
+        return web.json_response({
+            "success": bool(sz > 0),
+            "size": sz,
+            "elapsed_seconds": round(t1 - t0, 2)
+        })
+    except Exception as e:
+        return web.json_response({"success": False, "error": str(e)})
+
 async def self_ping_task(base_url: str = "https://ingichka-smart-store-bot.onrender.com"):
     health_url = f"{base_url.rstrip('/')}/health"
     logger.info(f"Render 24/7 self-pinger faollashtirildi: {health_url}")
@@ -2813,6 +2891,9 @@ def main():
         app.router.add_get("/health", handle_health_check)
         app.router.add_get("/status", handle_status)
         app.router.add_get("/diag", handle_diag)
+        app.router.add_get("/last_voice", handle_last_voice)
+        app.router.add_get("/logs", handle_logs)
+        app.router.add_get("/test_voice", handle_test_voice)
 
         SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path="/webhook")
         setup_application(app, dp, bot=bot)
