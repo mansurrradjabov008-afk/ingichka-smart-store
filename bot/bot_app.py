@@ -2659,6 +2659,29 @@ async def handle_private_chat(message: types.Message):
         )
         if is_asking_product:
             set_pending_order(user_id, first_matched)
+
+            # 1. 20 yillik tajribali bosh sotuvchi AI maslahati (jonli, samimiy, mato, qulaylik va ranglar bo'yicha)
+            prod_summary = ", ".join([
+                f"#{p['id']} {p['name']} (Ranglar: {p.get('color')}, O'lcham: {p.get('size')}, Narx: {p.get('sale_price'):,.0f} so'm, Mato: {p.get('material', '')})"
+                for p in matched_prods[:2]
+            ])
+            ai_query = f"[Mijoz so'ragan tovar: {prod_summary}]: {text}"
+
+            ai_reply = ai_brain.ask(
+                chat_id=message.chat.id,
+                user_message=ai_query,
+                customer_name=user_name
+            )
+            if ai_reply:
+                ai_reply = re.sub(
+                    r"(?:afsuski,?\s*)?(?:hozircha\s*)?rasm(?:lar)?ni\s*(?:to'g'ridan-to'g'ri\s*)?(?:ko'rsata|tashlay)\s*olmayman,?\s*(?:lekin\s*)?",
+                    "Marhamat! ",
+                    ai_reply,
+                    flags=re.IGNORECASE
+                )
+                await safe_send(message.chat.id, ai_reply)
+
+            # 2. Tovarlarning haqiqiy rasmli taqdimoti va 1-bosishda xarid qilish / savatga qo'shish tugmalari
             try:
                 await send_product_presentation(
                     bot=bot,

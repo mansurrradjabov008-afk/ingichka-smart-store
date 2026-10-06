@@ -345,7 +345,14 @@ Sen — "{STORE_NAME}" do'konining professional va samimiy BOSH SOTUVCHI-MASLAHA
             st = "mavjud" if p.get("stock", 0) > 2 else (f"oxirgi {p.get('stock')} ta qoldi" if p.get("stock", 0) > 0 else "omborda yo'q")
             sizes = ", ".join(p.get("sizes", []))
             colors = ", ".join(p.get("colors", []))
-            catalog_lines.append(f"#{p['id']} {p['name']} ({p.get('category')}) - {p.get('price'):,.0f} so'm | Razmer: {sizes} | Rang: {colors} | Holat: {st} | SKU: {p.get('sku')}")
+            mat = p.get("material", "Sifatli mato")
+            gen = p.get("gender", "Umumiy")
+            br = p.get("brand", "MarkazSavdo")
+            catalog_lines.append(
+                f"#{p['id']} {p['name']} ({p.get('category')}) | Narxi: {p.get('price'):,.0f} so'm | "
+                f"Kimga: {gen} | Brend: {br} | Mato: {mat} | Mavjud o'lchamlar: {sizes} | "
+                f"Mavjud ranglar: {colors} | Holat: {st} | SKU: {p.get('sku')} | Rasmi mavjud: Ha"
+            )
         catalog_str = "\n".join(catalog_lines)
         store_str = json.dumps(store_info, ensure_ascii=False)
 
@@ -360,8 +367,10 @@ Sen — "{STORE_NAME}" do'konining professional va samimiy BOSH SOTUVCHI-MASLAHA
    - Bir safarda FAQAT BITTA savol ber (one question at a time).
    - Xaridor allaqachon javob bergan savolni ASLO qaytadan so'rama.
 
-2. VOSITA VA MAHSULOTLAR (GROUNDING):
-   - FAQAT VA FAQAT quyidagi do'kon katalogida (products.json) bor tovarlar, narxlar va o'lchamlar asosida javob berasan! O'zingdan hech qachon tovar, narx yoki o'lcham to'qib chiqarma (Never invent products, prices or sizes).
+2. VOSITA VA MAHSULOTLAR (GROUNDING VA 0-GALLUTSINATSIYA):
+   - FAQAT VA FAQAT quyidagi do'kon katalogida (products.json) bor tovarlar, narxlar, o'lchamlar, matolar va ranglar asosida javob berasan! O'zingdan hech qachon tovar, narx, o'lcham yoki yo'q ranglarni to'qib chiqarma (Zero Hallucination)!
+   - Har bir tovar haqida 20 yillik tajribali bosh sotuvchi kabi chuqur ma'lumot ber: uning matosi (masalan: 100% paxta, poplin, bambuk, sifatli trikotaj), qulayligi, bichimi va mavjud ranglarini mehmondo'st tushuntir.
+   - Mijoz boshqa ranglar yoki turlarini so'rasa, FAQAT ushbu tovarning 'Mavjud ranglar'ida ko'rsatilgan haqiqiy ranglarini yoki shu toifadagi boshqa haqiqiy tovarlarni taklif qil. Katalogda yo'q ranglarni aslo to'qima!
    - Agar biror tovar qoldig'i 2 yoki kamroq bo'lsa, 'oxirgi N ta qoldi' deb ayt (masalan: 'oxirgi 1 ta qoldi', 'oxirgi 2 ta qoldi').
    - Agar so'ralgan o'lcham (razmer) bazada bo'lmasa, 'bizda faqat X, Y, Z bor' deb mavjud o'lchamlarni bildir.
    - Agar so'ralgan tovar bo'lmasa, aniq qilib ayt:
